@@ -212,31 +212,41 @@ const saveGlobalSettings = (settings: GlobalSettings) => localStorage.setItem(LS
 
 // ---------- URL Utilities ----------
 
-const generateCandidateUrl = (template: InterviewTemplate) => {
-  const baseUrl = window.location.origin + window.location.pathname;
-  // Encode the full template data in the URL
-  const templateData = btoa(JSON.stringify(template));
-  return `${baseUrl}?interview=${templateData}`;
-};
-
-const getTemplateFromUrl = (): InterviewTemplate | null => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const templateData = urlParams.get('interview');
-  if (!templateData) return null;
-  
+const generateCandidateUrl = async (template: InterviewTemplate) => {
+  // Store template on server first
   try {
-    // Try to decode as full template data first
-    const decoded = JSON.parse(atob(templateData));
-    if (decoded && decoded.id && decoded.questions) {
-      return decoded as InterviewTemplate;
-    }
-  } catch (e) {
-    // Fallback: try to find by ID in localStorage (for backward compatibility)
-    const templates = loadTemplates();
-    return templates.find(t => t.id === templateData) || null;
+    await fetch('/api/store-template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(template)
+    });
+  } catch (error) {
+    console.warn('Failed to store template on server:', error);
   }
   
-  return null;
+  const baseUrl = window.location.origin + window.location.pathname;
+  return `${baseUrl}?interview=${template.id}`;
+};
+
+const getTemplateFromUrl = async (): Promise<InterviewTemplate | null> => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const templateId = urlParams.get('interview');
+  if (!templateId) return null;
+  
+  try {
+    // Try to fetch from server first
+    const response = await fetch(`/api/get-template?id=${templateId}`);
+    if (response.ok) {
+      const template = await response.json();
+      return template as InterviewTemplate;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch template from server:', error);
+  }
+  
+  // Fallback: try localStorage
+  const templates = loadTemplates();
+  return templates.find(t => t.id === templateId) || null;
 };
 
 // ---------- Media Hook ----------
@@ -301,8 +311,12 @@ function useRecorder() {
 // ---------- Share Modal Component ----------
 
 function ShareModal({ template, onClose }: { template: InterviewTemplate; onClose: () => void }) {
-  const candidateUrl = generateCandidateUrl(template);
+  const [candidateUrl, setCandidateUrl] = useState('Generating link...');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    generateCandidateUrl(template).then(url => setCandidateUrl(url));
+  }, [template]);
 
   const copyToClipboard = async () => {
     try {
@@ -1172,11 +1186,12 @@ export default function App(){
   
   // Check if this is a candidate link
   useEffect(() => {
-    const template = getTemplateFromUrl();
-    if (template) {
-      setActive(template);
-      setMode('candidate');
-    }
+    getTemplateFromUrl().then(template => {
+      if (template) {
+        setActive(template);
+        setMode('candidate');
+      }
+    });
   }, []);
   
   return(
@@ -1194,7 +1209,7 @@ export default function App(){
       </div>
 
       {mode==='admin'&&<AdminPanel onLaunch={(t)=>{setActive(t);setMode('candidate')}}/>}
-      {mode==='candidate'&&active&&<CandidateView template={active} onBack={getTemplateFromUrl() ? undefined : ()=>setMode('admin')}/>}
+      {mode==='candidate'&&active&&<CandidateView template={active} onBack={new URLSearchParams(window.location.search).get('interview') ? undefined : ()=>setMode('admin')}/>}
       {mode==='submissions'&&<SubmissionsPanel/>}
     </div>
   );
