@@ -212,14 +212,31 @@ const saveGlobalSettings = (settings: GlobalSettings) => localStorage.setItem(LS
 
 // ---------- URL Utilities ----------
 
-const generateCandidateUrl = (templateId: string) => {
+const generateCandidateUrl = (template: InterviewTemplate) => {
   const baseUrl = window.location.origin + window.location.pathname;
-  return `${baseUrl}?interview=${templateId}`;
+  // Encode the full template data in the URL
+  const templateData = btoa(JSON.stringify(template));
+  return `${baseUrl}?interview=${templateData}`;
 };
 
-const getTemplateFromUrl = (): string | null => {
+const getTemplateFromUrl = (): InterviewTemplate | null => {
   const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get('interview');
+  const templateData = urlParams.get('interview');
+  if (!templateData) return null;
+  
+  try {
+    // Try to decode as full template data first
+    const decoded = JSON.parse(atob(templateData));
+    if (decoded && decoded.id && decoded.questions) {
+      return decoded as InterviewTemplate;
+    }
+  } catch (e) {
+    // Fallback: try to find by ID in localStorage (for backward compatibility)
+    const templates = loadTemplates();
+    return templates.find(t => t.id === templateData) || null;
+  }
+  
+  return null;
 };
 
 // ---------- Media Hook ----------
@@ -284,7 +301,7 @@ function useRecorder() {
 // ---------- Share Modal Component ----------
 
 function ShareModal({ template, onClose }: { template: InterviewTemplate; onClose: () => void }) {
-  const candidateUrl = generateCandidateUrl(template.id);
+  const candidateUrl = generateCandidateUrl(template);
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = async () => {
@@ -1155,16 +1172,10 @@ export default function App(){
   
   // Check if this is a candidate link
   useEffect(() => {
-    const templateId = getTemplateFromUrl();
-    if (templateId) {
-      const templates = loadTemplates();
-      const template = templates.find(t => t.id === templateId);
-      if (template) {
-        setActive(template);
-        setMode('candidate');
-      } else {
-        alert('Interview template not found. Please check the link.');
-      }
+    const template = getTemplateFromUrl();
+    if (template) {
+      setActive(template);
+      setMode('candidate');
     }
   }, []);
   
