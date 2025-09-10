@@ -775,42 +775,53 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
       
-      // Merge clips into a single webm using ffmpeg.wasm
-      setDriveStatus('Merging videos...');
-      const ffmpeg = new FFmpeg();
-      if (!ffmpeg.loaded) await ffmpeg.load();
-      // Write all recorded blobs to ffmpeg FS
-      const recorded = template.questions.map((q, i) => ({ q, clip: clips.find(c => c.qid === q.id) }));
-      const inputNames: string[] = [];
-      for (let i = 0; i < recorded.length; i++) {
-        const rc = recorded[i];
-        if (rc.clip?.blob) {
-          const name = `in${i}.webm`;
-          inputNames.push(name);
-          await ffmpeg.writeFile(name, await fetchFile(rc.clip.blob));
-        }
-      }
+      // Try to merge clips into a single webm using ffmpeg.wasm
       let mergedBlob: Blob | null = null;
-      if (inputNames.length > 0) {
-        // Build concat filter
-        const filter = inputNames.map((n, i) => `[v${i}][a${i}]`).join('');
-        const mapInputs: string[] = [];
-        const args: string[] = [];
-        inputNames.forEach((name, idx) => {
-          args.push('-i', name);
-          mapInputs.push(`[${idx}:v]`, `[${idx}:a]`);
-        });
-        const filterComplex = `${mapInputs.join('')}concat=n=${inputNames.length}:v=1:a=1[v][a]`;
-        const outName = 'merged.webm';
-        await ffmpeg.exec([
-          ...args,
-          '-filter_complex', filterComplex,
-          '-map', '[v]', '-map', '[a]',
-          '-c:v', 'libvpx-vp9', '-c:a', 'libopus',
-          outName
-        ]);
-        const data = await ffmpeg.readFile(outName);
-        mergedBlob = new Blob([data], { type: 'video/webm' });
+      const recorded = template.questions.map((q, i) => ({ q, clip: clips.find(c => c.qid === q.id) }));
+      const videoClips = recorded.filter(rc => rc.clip?.blob);
+      
+      if (videoClips.length > 1) {
+        try {
+          setDriveStatus('Merging videos...');
+          const ffmpeg = new FFmpeg();
+          await ffmpeg.load();
+          
+          // Write all recorded blobs to ffmpeg FS
+          const inputNames: string[] = [];
+          for (let i = 0; i < videoClips.length; i++) {
+            const rc = videoClips[i];
+            const name = `in${i}.webm`;
+            inputNames.push(name);
+            await ffmpeg.writeFile(name, await fetchFile(rc.clip!.blob));
+          }
+          
+          // Build concat filter
+          const mapInputs: string[] = [];
+          const args: string[] = [];
+          inputNames.forEach((name, idx) => {
+            args.push('-i', name);
+            mapInputs.push(`[${idx}:v]`, `[${idx}:a]`);
+          });
+          const filterComplex = `${mapInputs.join('')}concat=n=${inputNames.length}:v=1:a=1[v][a]`;
+          const outName = 'merged.webm';
+          await ffmpeg.exec([
+            ...args,
+            '-filter_complex', filterComplex,
+            '-map', '[v]', '-map', '[a]',
+            '-c:v', 'libvpx-vp9', '-c:a', 'libopus',
+            outName
+          ]);
+          const data = await ffmpeg.readFile(outName);
+          mergedBlob = new Blob([data], { type: 'video/webm' });
+          console.log('✅ Video merge successful');
+        } catch (error) {
+          console.warn('⚠️ Video merge failed, continuing with individual files:', error);
+          setDriveStatus('Video merge failed, packaging individual files...');
+        }
+      } else if (videoClips.length === 1) {
+        // If only one video, use it as the merged file
+        mergedBlob = videoClips[0].clip!.blob;
+        console.log('✅ Single video used as merged file');
       }
       
       template.questions.forEach((q, i) => {
