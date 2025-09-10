@@ -901,18 +901,20 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         });
 
         if (uploadResponse.ok) {
-          const { downloadUrl, fileName } = await uploadResponse.json();
+          const { fileName } = await uploadResponse.json();
           setDriveStatus('✅ Interview submitted successfully!');
           
-          // Auto-download the file for the candidate
+          // Auto-download the file for the candidate using the local blob
+          const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          a.href = downloadUrl;
+          a.href = url;
           a.download = fileName;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
+          URL.revokeObjectURL(url);
           
-          alert(`Interview submitted successfully!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
           return;
         } else {
           throw new Error('Upload failed');
