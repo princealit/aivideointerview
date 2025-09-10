@@ -975,7 +975,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       } catch (uploadError) {
         console.error('❌ Server upload failed:', uploadError);
         console.error('Upload error details:', {
-          error: uploadError.message,
+          error: uploadError instanceof Error ? uploadError.message : String(uploadError),
           fileName,
           blobSize: blob.size,
           timestamp: new Date().toISOString()
