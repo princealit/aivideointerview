@@ -106,29 +106,55 @@ const driveClient: any = {
   ready: false,
   token: undefined,
   async init(clientId: string) {
-    await loadScript("https://accounts.google.com/gsi/client");
-    await loadScript("https://apis.google.com/js/api.js");
-    // @ts-ignore
-    await new Promise<void>(res => gapi.load('client', () => res()));
-    // @ts-ignore
-    await gapi.client.init({ discoveryDocs: [DRIVE_DISCOVERY] });
-    // @ts-ignore
-    this._tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/drive.file',
-      callback: (resp: any) => {
-        if (resp.error) throw resp;
-        this.token = resp.access_token;
-        // @ts-ignore
-        gapi.client.setToken({ access_token: this.token });
-      },
-    });
-    this.ready = true;
+    try {
+      await loadScript("https://accounts.google.com/gsi/client");
+      await loadScript("https://apis.google.com/js/api.js");
+      // @ts-ignore
+      await new Promise<void>(res => gapi.load('client', () => res()));
+      // @ts-ignore
+      await gapi.client.init({ discoveryDocs: [DRIVE_DISCOVERY] });
+      
+      // @ts-ignore
+      this._tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        redirect_uri: window.location.origin,
+        callback: (resp: any) => {
+          if (resp.error) {
+            console.error('OAuth error:', resp.error);
+            throw new Error(`Google Drive authentication failed: ${resp.error}`);
+          }
+          this.token = resp.access_token;
+          // @ts-ignore
+          gapi.client.setToken({ access_token: this.token });
+        },
+      });
+      this.ready = true;
+    } catch (error) {
+      console.error('Drive client initialization failed:', error);
+      throw new Error('Failed to initialize Google Drive. Please check your Client ID.');
+    }
   },
   async ensureAuth() {
     if (this.token) return;
-    // @ts-ignore
-    await new Promise<void>((resolve) => this._tokenClient.requestAccessToken({ prompt: 'consent', callback: () => resolve() }));
+    
+    return new Promise<void>((resolve, reject) => {
+      try {
+        // @ts-ignore
+        this._tokenClient.requestAccessToken({ 
+          prompt: 'consent',
+          callback: (response: any) => {
+            if (response.error) {
+              reject(new Error(`Authentication failed: ${response.error}`));
+            } else {
+              resolve();
+            }
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
   },
   async uploadZip(fileName: string, blob: Blob, folderId?: string) {
     await this.ensureAuth();
@@ -774,12 +800,27 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       const fileName = `${candidatePrefix}${template.company||'company'}_${template.role||'role'}_interview_${timestamp}.zip`;
       
       if(template.driveClientId){
-        setDriveStatus('Initializing Google Drive...');
-        await driveClient.init(template.driveClientId);
-        setDriveStatus('Uploading to Drive...');
-        await driveClient.uploadZip(fileName, blob, template.driveFolderId);
-        setDriveStatus('✅ Uploaded to Google Drive successfully!');
-        alert('Interview successfully uploaded to Google Drive!');
+        try {
+          setDriveStatus('Initializing Google Drive...');
+          await driveClient.init(template.driveClientId);
+          setDriveStatus('Uploading to Drive...');
+          await driveClient.uploadZip(fileName, blob, template.driveFolderId);
+          setDriveStatus('✅ Uploaded to Google Drive successfully!');
+          alert('Interview successfully uploaded to Google Drive!');
+        } catch (driveError) {
+          console.error('Google Drive upload failed:', driveError);
+          setDriveStatus('⚠️ Drive upload failed, downloading locally instead...');
+          
+          // Fallback to local download
+          const url = URL.createObjectURL(blob);
+          const a=document.createElement('a'); 
+          a.href=url; 
+          a.download=fileName; 
+          a.click();
+          
+          alert('Google Drive upload failed, but your interview has been downloaded locally. Please check your Google Drive settings or contact support.');
+          setDriveStatus('✅ Downloaded locally (Drive upload failed)');
+        }
       } else {
         // Local download
         const url = URL.createObjectURL(blob);
@@ -792,7 +833,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
     } catch (error) {
       console.error('Export failed:', error);
       setDriveStatus('❌ Export failed - please try again');
-      alert('Export failed. Please try again or check your Google Drive settings.');
+      alert('Export failed. Please try again or check your browser settings.');
     }
   };
 
