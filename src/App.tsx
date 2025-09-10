@@ -804,27 +804,30 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       
       // Prepare data for submission (no immediate URL creation needed)
       
-      // Upload file to server for interviewer
+      // Upload file to Vercel Blob (server-side storage)
       try {
-        // Create FormData to send the actual file
-        const formData = new FormData();
-        formData.append('interviewFile', blob, fileName);
-        formData.append('candidateName', candidateName || 'Anonymous');
-        formData.append('templateName', template.name);
-        formData.append('company', template.company || '');
-        formData.append('role', template.role || '');
-        formData.append('answeredQuestions', answeredCount.toString());
-        formData.append('totalQuestions', template.questions.length.toString());
-        formData.append('timestamp', new Date().toISOString());
-
-        const uploadResponse = await fetch('/api/upload-file', {
+        const uploadResponse = await fetch('/api/store-interview', {
           method: 'POST',
-          body: formData
+          headers: {
+            'Content-Type': 'application/zip',
+            'x-filename': fileName,
+            'x-meta': JSON.stringify({
+              candidateName: candidateName || 'Anonymous',
+              templateName: template.name,
+              company: template.company,
+              role: template.role,
+              answeredQuestions: answeredCount,
+              totalQuestions: template.questions.length,
+              timestamp: new Date().toISOString(),
+            }),
+          },
+          body: blob,
         });
 
         if (uploadResponse.ok) {
+          const { url } = await uploadResponse.json();
           setDriveStatus('✅ Interview submitted successfully!');
-          alert(`Interview submitted successfully!\n\nYour interview has been sent to the interviewer.\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          alert(`Interview submitted successfully!\n\nStored securely. Candidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
           return;
         } else {
           throw new Error('Upload failed');

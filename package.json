@@ -12,6 +12,7 @@
     "@types/node": "^16.18.126",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "@vercel/blob": "^1.1.1",
     "framer-motion": "^12.23.12",
     "jszip": "^3.10.1",
     "lucide-react": "^0.543.0",
