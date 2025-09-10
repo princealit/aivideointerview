@@ -200,7 +200,7 @@ function useRecorder() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
   const [recording, setRecording] = useState(false);
-  const [chunks, setChunks] = useState<Blob[]>([]);
+  const chunksRef = useRef<Blob[]>([]);
 
   const request = async () => {
     const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -209,11 +209,18 @@ function useRecorder() {
   };
 
   const start = async () => {
+    // Clear previous chunks
+    chunksRef.current = [];
+    
     const s = stream ?? (await request());
     const mr = new MediaRecorder(s, { mimeType: "video/webm;codecs=vp8,opus" });
-    const buf: Blob[] = [];
-    mr.ondataavailable = e => e.data && buf.push(e.data);
-    mr.onstop = () => setChunks(buf.slice());
+    
+    mr.ondataavailable = e => {
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+    
     mr.start();
     setRecorder(mr);
     setRecording(true);
@@ -221,20 +228,27 @@ function useRecorder() {
 
   const stop = async (): Promise<Blob | null> => {
     if (!recorder || !recording) return null;
+    
     return new Promise(resolve => {
-      const currentChunks = [...chunks];
-      recorder.onstop = () => {
+      const currentRecorder = recorder;
+      
+      currentRecorder.onstop = () => {
         setRecording(false);
         setRecorder(null);
-        const blob = new Blob(currentChunks, { type: "video/webm" });
-        setChunks([]);
+        
+        const blob = new Blob(chunksRef.current, { type: "video/webm" });
+        chunksRef.current = []; // Clear for next recording
         resolve(blob);
       };
-      recorder.stop();
+      
+      currentRecorder.stop();
     });
   };
 
-  const stopTracks = () => { stream?.getTracks().forEach(t => t.stop()); setStream(null); };
+  const stopTracks = () => { 
+    stream?.getTracks().forEach(t => t.stop()); 
+    setStream(null);
+  };
 
   return { stream, request, start, stop, recording, stopTracks };
 }
