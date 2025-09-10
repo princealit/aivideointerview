@@ -1183,17 +1183,39 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
 export default function App(){
   const [mode,setMode]=useState<'admin'|'candidate'|'submissions'>('admin');
   const [active,setActive]=useState<InterviewTemplate|null>(null);
+  const [isCandidateLink, setIsCandidateLink] = useState(false);
   
   // Check if this is a candidate link
   useEffect(() => {
-    getTemplateFromUrl().then(template => {
-      if (template) {
-        setActive(template);
-        setMode('candidate');
-      }
-    });
+    const hasInterviewParam = new URLSearchParams(window.location.search).get('interview');
+    if (hasInterviewParam) {
+      setIsCandidateLink(true);
+      getTemplateFromUrl().then(template => {
+        if (template) {
+          setActive(template);
+          setMode('candidate');
+        }
+      });
+    }
   }, []);
   
+  // If this is a candidate link, only show the interview interface
+  if (isCandidateLink) {
+    return(
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white shadow-sm border-b">
+          <div className="max-w-6xl mx-auto px-6 py-4">
+            <h1 className="text-3xl font-bold text-gray-900">AI Interview App</h1>
+            <p className="text-gray-600 mt-1">Record professional video interviews for any company or role</p>
+          </div>
+        </div>
+        
+        {active && <CandidateView template={active} onBack={undefined}/>}
+      </div>
+    );
+  }
+  
+  // Admin interface (only shown when NOT accessed via candidate link)
   return(
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
@@ -1209,7 +1231,7 @@ export default function App(){
       </div>
 
       {mode==='admin'&&<AdminPanel onLaunch={(t)=>{setActive(t);setMode('candidate')}}/>}
-      {mode==='candidate'&&active&&<CandidateView template={active} onBack={new URLSearchParams(window.location.search).get('interview') ? undefined : ()=>setMode('admin')}/>}
+      {mode==='candidate'&&active&&<CandidateView template={active} onBack={()=>setMode('admin')}/>}
       {mode==='submissions'&&<SubmissionsPanel/>}
     </div>
   );
