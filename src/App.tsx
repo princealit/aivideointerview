@@ -1200,6 +1200,7 @@ function SubmissionsPanel(){
               <a className="px-3 py-1 border rounded bg-green-600 text-white" href={f.url} target="_blank" rel="noreferrer">Download</a>
               <button className="px-3 py-1 border rounded" onClick={()=> navigator.clipboard.writeText(f.url)}>Copy Link</button>
               <button className="px-3 py-1 border rounded text-red-600" onClick={async ()=>{
+                // eslint-disable-next-line no-restricted-globals
                 if (!confirm('Delete this interview?')) return;
                 const resp = await fetch('/api/delete-interview', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ pathname: f.pathname })});
                 if (resp.ok) { refresh(); } else { alert('Delete failed'); }
