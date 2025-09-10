@@ -783,39 +783,53 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       if (videoClips.length > 1) {
         try {
           setDriveStatus('Merging videos...');
+          console.log(`🎬 Starting merge of ${videoClips.length} videos`);
+          
           const ffmpeg = new FFmpeg();
+          ffmpeg.on('log', ({ message }) => {
+            console.log('FFmpeg:', message);
+          });
+          ffmpeg.on('progress', ({ progress }) => {
+            console.log(`FFmpeg progress: ${Math.round(progress * 100)}%`);
+          });
+          
+          console.log('Loading FFmpeg...');
           await ffmpeg.load();
+          console.log('FFmpeg loaded successfully');
           
           // Write all recorded blobs to ffmpeg FS
           const inputNames: string[] = [];
           for (let i = 0; i < videoClips.length; i++) {
             const rc = videoClips[i];
-            const name = `in${i}.webm`;
+            const name = `input${i}.webm`;
             inputNames.push(name);
+            console.log(`Writing ${name} (${rc.clip!.blob.size} bytes)`);
             await ffmpeg.writeFile(name, await fetchFile(rc.clip!.blob));
           }
+          console.log('All input files written to FFmpeg');
           
-          // Build concat filter
-          const mapInputs: string[] = [];
-          const args: string[] = [];
-          inputNames.forEach((name, idx) => {
-            args.push('-i', name);
-            mapInputs.push(`[${idx}:v]`, `[${idx}:a]`);
-          });
-          const filterComplex = `${mapInputs.join('')}concat=n=${inputNames.length}:v=1:a=1[v][a]`;
+          // Simple concat approach - create a concat list file
+          const concatList = inputNames.map(name => `file '${name}'`).join('\n');
+          await ffmpeg.writeFile('concat.txt', concatList);
+          
           const outName = 'merged.webm';
+          console.log('Starting FFmpeg concat...');
           await ffmpeg.exec([
-            ...args,
-            '-filter_complex', filterComplex,
-            '-map', '[v]', '-map', '[a]',
-            '-c:v', 'libvpx-vp9', '-c:a', 'libopus',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', 'concat.txt',
+            '-c', 'copy',
             outName
           ]);
+          console.log('FFmpeg concat completed');
+          
           const data = await ffmpeg.readFile(outName);
           mergedBlob = new Blob([data], { type: 'video/webm' });
-          console.log('✅ Video merge successful');
+          console.log(`✅ Video merge successful! Output size: ${mergedBlob.size} bytes`);
+          setDriveStatus('Videos merged successfully!');
+          
         } catch (error) {
-          console.warn('⚠️ Video merge failed, continuing with individual files:', error);
+          console.error('❌ Video merge failed:', error);
           setDriveStatus('Video merge failed, packaging individual files...');
         }
       } else if (videoClips.length === 1) {
