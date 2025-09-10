@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, CirclePlay, CircleStop, Download, Loader2, Mic, Play, Settings, Trash2, Video, Wand2, CloudUpload, Edit2 } from "lucide-react";
+import { Camera, CirclePlay, CircleStop, Download, Loader2, Mic, Play, Settings, Trash2, Video, Wand2, CloudUpload, Edit2, Copy, Share, Link } from "lucide-react";
 
 /**
  * AI Interview App – Enhanced Conversational Video Interview Tool (Client-side, Free)
@@ -11,6 +11,7 @@ import { Camera, CirclePlay, CircleStop, Download, Loader2, Mic, Play, Settings,
  * ✅ Editable questions with inline editing
  * ✅ Global Google Drive settings (persistent)
  * ✅ Persistent interview templates for reuse
+ * ✅ Shareable candidate links - no admin access needed
  * ✅ Auto-upload when all answers are recorded (configurable per template)
  */
 
@@ -181,6 +182,18 @@ const loadGlobalSettings = (): GlobalSettings => {
 
 const saveGlobalSettings = (settings: GlobalSettings) => localStorage.setItem(LS_KEY_GLOBAL_SETTINGS, JSON.stringify(settings));
 
+// ---------- URL Utilities ----------
+
+const generateCandidateUrl = (templateId: string) => {
+  const baseUrl = window.location.origin + window.location.pathname;
+  return `${baseUrl}?interview=${templateId}`;
+};
+
+const getTemplateFromUrl = (): string | null => {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get('interview');
+};
+
 // ---------- Media Hook ----------
 
 function useRecorder() {
@@ -224,6 +237,100 @@ function useRecorder() {
   return { stream, request, start, stop, recording, stopTracks };
 }
 
+// ---------- Share Modal Component ----------
+
+function ShareModal({ template, onClose }: { template: InterviewTemplate; onClose: () => void }) {
+  const candidateUrl = generateCandidateUrl(template.id);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(candidateUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea');
+      textArea.value = candidateUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">Share Interview Link</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">×</button>
+        </div>
+        
+        <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+          <h4 className="font-medium text-blue-800 mb-2">Interview Details:</h4>
+          <p><strong>Company:</strong> {template.company}</p>
+          <p><strong>Role:</strong> {template.role}</p>
+          <p><strong>Questions:</strong> {template.questions.length}</p>
+          <p><strong>Auto-upload:</strong> {template.autoUploadOnFinish ? 'Yes' : 'No'}</p>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-2">Candidate Interview Link:</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={candidateUrl}
+              readOnly
+              className="flex-1 p-3 border rounded-lg bg-gray-50 font-mono text-sm"
+            />
+            <button
+              onClick={copyToClipboard}
+              className={`px-4 py-3 rounded-lg font-medium transition-colors ${
+                copied 
+                  ? 'bg-green-600 text-white' 
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {copied ? '✓ Copied!' : <><Copy size={16} className="inline mr-1"/> Copy</>}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+          <h4 className="font-medium text-yellow-800 mb-2">📋 Instructions for Candidates:</h4>
+          <ol className="text-sm text-yellow-700 space-y-1">
+            <li>1. Click the link above to start the interview</li>
+            <li>2. Allow camera and microphone access when prompted</li>
+            <li>3. Enter their full name (optional but recommended)</li>
+            <li>4. Answer each question within the time limit</li>
+            <li>5. Navigate between questions using Previous/Next buttons</li>
+            <li>6. {template.autoUploadOnFinish ? 'Answers will auto-upload to Google Drive when complete' : 'Click "Export & Upload" when finished'}</li>
+          </ol>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={copyToClipboard}
+            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
+          >
+            <Share size={16} className="inline mr-2"/>
+            Copy Link to Share
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Admin Panel ----------
 
 function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void }) {
@@ -231,6 +338,7 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
   const [selectedId, setSelectedId] = useState<string>(templates[0]?.id);
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings>(loadGlobalSettings());
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
   
   const selected = useMemo(() => templates.find(t => t.id === selectedId)!, [templates, selectedId]);
 
@@ -489,13 +597,29 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
 
       <div className="flex gap-3">
         <button 
-          onClick={()=>onLaunch(selected)}
-          className="flex-1 px-4 py-3 bg-blue-600 text-white rounded font-medium hover:bg-blue-500"
+          onClick={() => setShowShareModal(true)}
+          className="flex-1 px-4 py-3 bg-blue-600 text-white rounded font-medium hover:bg-blue-500 inline-flex items-center justify-center gap-2"
           disabled={!selected.questions.length}
         >
-          Launch Interview ({selected.questions.length} questions)
+          <Share size={16}/> 
+          Share Interview Link ({selected.questions.length} questions)
+        </button>
+        
+        <button 
+          onClick={()=>onLaunch(selected)}
+          className="px-4 py-3 bg-gray-600 text-white rounded font-medium hover:bg-gray-500"
+          disabled={!selected.questions.length}
+        >
+          Preview Interview
         </button>
       </div>
+
+      {showShareModal && (
+        <ShareModal 
+          template={selected} 
+          onClose={() => setShowShareModal(false)} 
+        />
+      )}
     </div>
   );
 }
@@ -763,12 +887,14 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           {answeredCount > 0 && ` (${answeredCount} answers)`}
         </button>
         
-        <button 
-          onClick={onBack}
-          className="px-6 py-3 border rounded-lg hover:bg-gray-50 font-medium"
-        >
-          ← Back to Templates
-        </button>
+        {onBack && (
+          <button 
+            onClick={onBack}
+            className="px-6 py-3 border rounded-lg hover:bg-gray-50 font-medium"
+          >
+            ← Back to Templates
+          </button>
+        )}
       </div>
     </div>
   );
@@ -780,6 +906,21 @@ export default function App(){
   const [mode,setMode]=useState<'admin'|'candidate'>('admin');
   const [active,setActive]=useState<InterviewTemplate|null>(null);
   
+  // Check if this is a candidate link
+  useEffect(() => {
+    const templateId = getTemplateFromUrl();
+    if (templateId) {
+      const templates = loadTemplates();
+      const template = templates.find(t => t.id === templateId);
+      if (template) {
+        setActive(template);
+        setMode('candidate');
+      } else {
+        alert('Interview template not found. Please check the link.');
+      }
+    }
+  }, []);
+  
   return(
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
@@ -790,7 +931,7 @@ export default function App(){
       </div>
       
       {mode==='admin'&&<AdminPanel onLaunch={(t)=>{setActive(t);setMode('candidate')}}/>}
-      {mode==='candidate'&&active&&<CandidateView template={active} onBack={()=>setMode('admin')}/>}    
+      {mode==='candidate'&&active&&<CandidateView template={active} onBack={getTemplateFromUrl() ? undefined : ()=>setMode('admin')}/>}    
     </div>
   );
 }
