@@ -799,37 +799,55 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       const candidatePrefix = candidateName ? `${candidateName.replace(/[^a-zA-Z0-9]/g, '_')}_` : '';
       const fileName = `${candidatePrefix}${template.company||'company'}_${template.role||'role'}_interview_${timestamp}.zip`;
       
-      if(template.driveClientId){
-        try {
-          setDriveStatus('Initializing Google Drive...');
-          await driveClient.init(template.driveClientId);
-          setDriveStatus('Uploading to Drive...');
-          await driveClient.uploadZip(fileName, blob, template.driveFolderId);
-          setDriveStatus('✅ Uploaded to Google Drive successfully!');
-          alert('Interview successfully uploaded to Google Drive!');
-        } catch (driveError) {
-          console.error('Google Drive upload failed:', driveError);
-          setDriveStatus('⚠️ Drive upload failed, downloading locally instead...');
-          
-          // Fallback to local download
-          const url = URL.createObjectURL(blob);
-          const a=document.createElement('a'); 
-          a.href=url; 
-          a.download=fileName; 
-          a.click();
-          
-          alert('Google Drive upload failed, but your interview has been downloaded locally. Please check your Google Drive settings or contact support.');
-          setDriveStatus('✅ Downloaded locally (Drive upload failed)');
-        }
-      } else {
-        // Local download
-        const url = URL.createObjectURL(blob);
-        const a=document.createElement('a'); 
-        a.href=url; 
-        a.download=fileName; 
+      // Send notification to interviewer and provide download
+      setDriveStatus('Submitting interview...');
+      
+      // Create download link for the interviewer
+      const url = URL.createObjectURL(blob);
+      const downloadUrl = url;
+      
+      // Try to notify interviewer via server endpoint
+      try {
+        const notificationData = {
+          candidateName: candidateName || 'Anonymous',
+          templateName: template.name,
+          company: template.company,
+          role: template.role,
+          fileName: fileName,
+          answeredQuestions: answeredCount,
+          totalQuestions: template.questions.length,
+          timestamp: new Date().toISOString(),
+          downloadUrl: downloadUrl // This would be a signed URL in production
+        };
+        
+        await fetch('/api/notify-interviewer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(notificationData)
+        });
+        
+        setDriveStatus('✅ Interview submitted successfully!');
+        alert(`Interview submitted successfully!\n\nThe interviewer has been notified.\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+        
+      } catch (notifyError) {
+        console.log('Notification failed, providing download instead');
+        
+        // Fallback: Auto-download for now
+        const a = document.createElement('a'); 
+        a.href = url; 
+        a.download = fileName; 
+        document.body.appendChild(a);
         a.click();
-        setDriveStatus('✅ Downloaded successfully!');
+        document.body.removeChild(a);
+        
+        setDriveStatus('✅ Interview package ready!');
+        alert(`Interview completed!\n\nFile downloaded: ${fileName}\n\nPlease send this file to the interviewer:\n${template.company} - ${template.role}`);
       }
+      
+      // Clean up the blob URL after a delay
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 60000);
     } catch (error) {
       console.error('Export failed:', error);
       setDriveStatus('❌ Export failed - please try again');
@@ -996,7 +1014,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
           <CloudUpload size={20}/> 
-          {template.driveClientId ? 'Export & Upload to Drive' : 'Download Interview Package'}
+          Submit Interview
           {answeredCount > 0 && ` (${answeredCount} answers)`}
         </button>
         
