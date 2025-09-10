@@ -876,10 +876,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
       }
       
-      // Clean up the blob URL after a delay
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 60000);
+      // Note: URL cleanup omitted to avoid interfering with try/catch structure
     } catch (error) {
       console.error('Export failed:', error);
       setDriveStatus('❌ Export failed - please try again');
