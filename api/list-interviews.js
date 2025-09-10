@@ -2,7 +2,8 @@ import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
   try {
-    const result = await list({ prefix: 'interviews/' });
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const result = await list({ prefix: 'interviews/', token });
     // Return only minimal info
     const files = result.blobs.map(b => ({
       pathname: b.pathname,
