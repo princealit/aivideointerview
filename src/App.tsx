@@ -806,33 +806,65 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       const url = URL.createObjectURL(blob);
       const downloadUrl = url;
       
-      // Try to notify interviewer via server endpoint
+      // Upload file to server for interviewer
       try {
-        const notificationData = {
-          candidateName: candidateName || 'Anonymous',
-          templateName: template.name,
-          company: template.company,
-          role: template.role,
-          fileName: fileName,
-          answeredQuestions: answeredCount,
-          totalQuestions: template.questions.length,
-          timestamp: new Date().toISOString(),
-          downloadUrl: downloadUrl // This would be a signed URL in production
-        };
-        
-        await fetch('/api/notify-interviewer', {
+        // Create FormData to send the actual file
+        const formData = new FormData();
+        formData.append('interviewFile', blob, fileName);
+        formData.append('candidateName', candidateName || 'Anonymous');
+        formData.append('templateName', template.name);
+        formData.append('company', template.company || '');
+        formData.append('role', template.role || '');
+        formData.append('answeredQuestions', answeredCount.toString());
+        formData.append('totalQuestions', template.questions.length.toString());
+        formData.append('timestamp', new Date().toISOString());
+
+        const uploadResponse = await fetch('/api/upload-file', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(notificationData)
+          body: formData
         });
+
+        if (uploadResponse.ok) {
+          setDriveStatus('✅ Interview submitted successfully!');
+          alert(`Interview submitted successfully!\n\nYour interview has been sent to the interviewer.\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          return;
+        } else {
+          throw new Error('Upload failed');
+        }
         
-        setDriveStatus('✅ Interview submitted successfully!');
-        alert(`Interview submitted successfully!\n\nThe interviewer has been notified.\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+      } catch (uploadError) {
+        console.log('Server upload failed, trying notification instead');
         
-      } catch (notifyError) {
-        console.log('Notification failed, providing download instead');
+        // Fallback to notification-only approach
+        try {
+          const notificationData = {
+            candidateName: candidateName || 'Anonymous',
+            templateName: template.name,
+            company: template.company,
+            role: template.role,
+            fileName: fileName,
+            answeredQuestions: answeredCount,
+            totalQuestions: template.questions.length,
+            timestamp: new Date().toISOString()
+          };
+          
+          await fetch('/api/notify-interviewer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(notificationData)
+          });
+          
+          setDriveStatus('✅ Interview submitted successfully!');
+          alert(`Interview submitted successfully!\n\nThe interviewer has been notified.\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          return;
+          
+        } catch (notifyError) {
+          console.log('Both upload and notification failed, providing download instead');
+        }
+      }
         
-        // Fallback: Auto-download for now
+        // Auto-download with clear instructions
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); 
         a.href = url; 
         a.download = fileName; 
@@ -840,8 +872,8 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         a.click();
         document.body.removeChild(a);
         
-        setDriveStatus('✅ Interview package ready!');
-        alert(`Interview completed!\n\nFile downloaded: ${fileName}\n\nPlease send this file to the interviewer:\n${template.company} - ${template.role}`);
+        setDriveStatus('✅ Interview completed and downloaded!');
+        alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
       }
       
       // Clean up the blob URL after a delay
