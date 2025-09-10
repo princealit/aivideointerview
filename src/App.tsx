@@ -803,8 +803,8 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
             const rc = videoClips[i];
             const name = `input${i}.webm`;
             inputNames.push(name);
-            console.log(`Writing ${name} (${rc.clip!.blob.size} bytes)`);
-            await ffmpeg.writeFile(name, await fetchFile(rc.clip!.blob));
+            console.log(`Writing ${name} (${rc.clip!.blob!.size} bytes)`);
+            await ffmpeg.writeFile(name, await fetchFile(rc.clip!.blob!));
           }
           console.log('All input files written to FFmpeg');
           
