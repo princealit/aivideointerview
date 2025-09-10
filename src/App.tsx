@@ -1,19 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, CirclePlay, CircleStop, Download, Loader2, Mic, Play, Settings, Trash2, Video, Wand2, CloudUpload } from "lucide-react";
+import { Camera, CirclePlay, CircleStop, Download, Loader2, Mic, Play, Settings, Trash2, Video, Wand2, CloudUpload, Edit2 } from "lucide-react";
 
 /**
- * AI Interview App – Conversational Video Interview Tool (Client-side, Free)
+ * AI Interview App – Enhanced Conversational Video Interview Tool (Client-side, Free)
  * ------------------------------------------------------------------
  * ✅ No backend required – everything runs in the browser
  * ✅ Works for ANY company/role – create multiple templates with unique questions
  * ✅ Record per-question video answers (WebM) with webcam + mic
- * ✅ Text-to-Speech (TTS) reads questions aloud
- * ✅ Optional Speech Recognition (Chrome/Edge) for light "conversational" follow‑ups
- * ✅ Auto-scoring via keyword/rubric matching (client-side)
- * ✅ Export: ZIP of all answer videos + JSON summary for recruiters
- * ✅ Multiple roles: create & save different interview templates (localStorage)
- * ✅ Google Drive: one‑click upload of candidate package to a Drive folder (per-template configurable)
+ * ✅ Editable questions with inline editing
+ * ✅ Global Google Drive settings (persistent)
+ * ✅ Persistent interview templates for reuse
  * ✅ Auto-upload when all answers are recorded (configurable per template)
  */
 
@@ -41,7 +38,7 @@ type InterviewTemplate = {
   rubric?: string;
   driveClientId?: string;
   driveFolderId?: string;
-  autoUploadOnFinish?: boolean; // auto-upload ZIP to Drive when all answers are recorded
+  autoUploadOnFinish?: boolean;
 };
 
 type RecordingClip = {
@@ -52,6 +49,11 @@ type RecordingClip = {
   transcript?: string;
   score?: number;
   keywordHits?: string[];
+};
+
+type GlobalSettings = {
+  driveClientId: string;
+  driveFolderId: string;
 };
 
 // ---------- Utilities ----------
@@ -146,7 +148,8 @@ const driveClient: any = {
 
 // ---------- Local Storage ----------
 
-const LS_KEY_TEMPLATES = "ai_interview_templates_v1";
+const LS_KEY_TEMPLATES = "ai_interview_templates_v2";
+const LS_KEY_GLOBAL_SETTINGS = "ai_interview_global_settings";
 
 const loadTemplates = (): InterviewTemplate[] => {
   try {
@@ -159,6 +162,24 @@ const loadTemplates = (): InterviewTemplate[] => {
 };
 
 const saveTemplates = (t: InterviewTemplate[]) => localStorage.setItem(LS_KEY_TEMPLATES, JSON.stringify(t));
+
+const loadGlobalSettings = (): GlobalSettings => {
+  try {
+    const s = localStorage.getItem(LS_KEY_GLOBAL_SETTINGS);
+    if (!s) return {
+      driveClientId: "138878321119-dqs9tqvft80lf5v1hv2ssndostv7n64q.apps.googleusercontent.com",
+      driveFolderId: "16wDvuUeX3pC77MRcdzCwoTTMmD2a3gOE"
+    };
+    return JSON.parse(s) as GlobalSettings;
+  } catch {
+    return {
+      driveClientId: "138878321119-dqs9tqvft80lf5v1hv2ssndostv7n64q.apps.googleusercontent.com",
+      driveFolderId: "16wDvuUeX3pC77MRcdzCwoTTMmD2a3gOE"
+    };
+  }
+};
+
+const saveGlobalSettings = (settings: GlobalSettings) => localStorage.setItem(LS_KEY_GLOBAL_SETTINGS, JSON.stringify(settings));
 
 // ---------- Media Hook ----------
 
@@ -208,17 +229,60 @@ function useRecorder() {
 function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void }) {
   const [templates, setTemplates] = useState<InterviewTemplate[]>(loadTemplates());
   const [selectedId, setSelectedId] = useState<string>(templates[0]?.id);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>(loadGlobalSettings());
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  
   const selected = useMemo(() => templates.find(t => t.id === selectedId)!, [templates, selectedId]);
 
+  const updateGlobalSettings = (patch: Partial<GlobalSettings>) => {
+    const newSettings = { ...globalSettings, ...patch };
+    setGlobalSettings(newSettings);
+    saveGlobalSettings(newSettings);
+  };
+
   const addQuestion = () => {
-    const q: InterviewQuestion = { id: uid(), prompt: "New question", required: false, timeLimitSec: 60, weight: 0.5 };
+    const q: InterviewQuestion = { 
+      id: uid(), 
+      prompt: "Click to edit this question", 
+      required: false, 
+      timeLimitSec: 120, 
+      weight: 1 
+    };
     const next = templates.map(t => t.id === selected.id ? { ...t, questions: [...t.questions, q] } : t);
-    setTemplates(next); saveTemplates(next);
+    setTemplates(next); 
+    saveTemplates(next);
+    setEditingQuestionId(q.id);
   };
 
   const updateTemplate = (patch: Partial<InterviewTemplate>) => {
-    const next = templates.map(t => t.id === selected.id ? { ...t, ...patch } : t);
-    setTemplates(next); saveTemplates(next);
+    const next = templates.map(t => t.id === selected.id ? { 
+      ...t, 
+      ...patch,
+      driveClientId: patch.driveClientId !== undefined ? patch.driveClientId : globalSettings.driveClientId,
+      driveFolderId: patch.driveFolderId !== undefined ? patch.driveFolderId : globalSettings.driveFolderId,
+    } : t);
+    setTemplates(next); 
+    saveTemplates(next);
+  };
+
+  const updateQuestion = (questionId: string, patch: Partial<InterviewQuestion>) => {
+    const next = templates.map(t => 
+      t.id === selected.id 
+        ? { ...t, questions: t.questions.map(q => q.id === questionId ? { ...q, ...patch } : q) }
+        : t
+    );
+    setTemplates(next); 
+    saveTemplates(next);
+  };
+
+  const deleteQuestion = (questionId: string) => {
+    const next = templates.map(t => 
+      t.id === selected.id 
+        ? { ...t, questions: t.questions.filter(q => q.id !== questionId) }
+        : t
+    );
+    setTemplates(next); 
+    saveTemplates(next);
   };
 
   const createTemplate = () => {
@@ -228,12 +292,29 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
       company: "", 
       role: "", 
       questions: [],
-      driveClientId: "",
-      driveFolderId: "",
-      autoUploadOnFinish: false
+      driveClientId: globalSettings.driveClientId,
+      driveFolderId: globalSettings.driveFolderId,
+      autoUploadOnFinish: true
     };
     const next = [t, ...templates];
-    setTemplates(next); saveTemplates(next); setSelectedId(t.id);
+    setTemplates(next); 
+    saveTemplates(next); 
+    setSelectedId(t.id);
+  };
+
+  const duplicateTemplate = () => {
+    if (!selected) return;
+    const t: InterviewTemplate = {
+      ...selected,
+      id: uid(),
+      name: `${selected.name} (Copy)`,
+      driveClientId: globalSettings.driveClientId,
+      driveFolderId: globalSettings.driveFolderId,
+    };
+    const next = [t, ...templates];
+    setTemplates(next); 
+    saveTemplates(next); 
+    setSelectedId(t.id);
   };
 
   if (!selected) {
@@ -252,8 +333,31 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-4xl mx-auto">
       <h2 className="text-lg font-bold mb-4">AI Interview Templates</h2>
+      
+      {/* Global Settings */}
+      <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+        <h3 className="font-medium mb-3 text-blue-800">Global Google Drive Settings</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-blue-700">Client ID (saved globally)</label>
+            <input 
+              value={globalSettings.driveClientId} 
+              onChange={e=>updateGlobalSettings({driveClientId:e.target.value})}
+              className="w-full p-2 border rounded mt-1 text-xs"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-blue-700">Folder ID (saved globally)</label>
+            <input 
+              value={globalSettings.driveFolderId} 
+              onChange={e=>updateGlobalSettings({driveFolderId:e.target.value})}
+              className="w-full p-2 border rounded mt-1 text-xs"
+            />
+          </div>
+        </div>
+      </div>
       
       <div className="mb-4 flex gap-2">
         <select 
@@ -261,13 +365,19 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
           onChange={e=>setSelectedId(e.target.value)}
           className="flex-1 p-2 border rounded"
         >
-          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {templates.map(t => <option key={t.id} value={t.id}>{t.name} ({t.company} - {t.role})</option>)}
         </select>
         <button 
           onClick={createTemplate}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500"
         >
           New Template
+        </button>
+        <button 
+          onClick={duplicateTemplate}
+          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500"
+        >
+          Duplicate
         </button>
       </div>
 
@@ -281,43 +391,25 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
           />
         </label>
         
-        <label className="block">
-          <span className="text-sm font-medium">Company</span>
-          <input 
-            value={selected.company||''} 
-            onChange={e=>updateTemplate({company:e.target.value})}
-            className="w-full p-2 border rounded mt-1"
-          />
-        </label>
-        
-        <label className="block">
-          <span className="text-sm font-medium">Role</span>
-          <input 
-            value={selected.role||''} 
-            onChange={e=>updateTemplate({role:e.target.value})}
-            className="w-full p-2 border rounded mt-1"
-          />
-        </label>
-        
-        <label className="block">
-          <span className="text-sm font-medium">Google Drive Client ID</span>
-          <input 
-            value={selected.driveClientId||''} 
-            onChange={e=>updateTemplate({driveClientId:e.target.value})}
-            className="w-full p-2 border rounded mt-1"
-            placeholder="Optional: for Google Drive uploads"
-          />
-        </label>
-        
-        <label className="block">
-          <span className="text-sm font-medium">Google Drive Folder ID</span>
-          <input 
-            value={selected.driveFolderId||''} 
-            onChange={e=>updateTemplate({driveFolderId:e.target.value})}
-            className="w-full p-2 border rounded mt-1"
-            placeholder="Optional: specific folder for uploads"
-          />
-        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm font-medium">Company</span>
+            <input 
+              value={selected.company||''} 
+              onChange={e=>updateTemplate({company:e.target.value})}
+              className="w-full p-2 border rounded mt-1"
+            />
+          </label>
+          
+          <label className="block">
+            <span className="text-sm font-medium">Role</span>
+            <input 
+              value={selected.role||''} 
+              onChange={e=>updateTemplate({role:e.target.value})}
+              className="w-full p-2 border rounded mt-1"
+            />
+          </label>
+        </div>
 
         <label className="flex items-center gap-2 mt-2">
           <input
@@ -341,26 +433,69 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
           </button>
         </div>
         
-        <div className="space-y-2">
+        <div className="space-y-3">
           {selected.questions.map((q, i) => (
-            <div key={q.id} className="p-3 border rounded">
-              <div className="text-sm text-gray-600">Question {i + 1}</div>
-              <div className="font-medium">{q.prompt}</div>
-              <div className="text-xs text-gray-500 mt-1">
-                {q.timeLimitSec}s limit • Weight: {q.weight || 1}
+            <div key={q.id} className="p-4 border rounded-lg bg-gray-50">
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-sm text-gray-600 font-medium">Question {i + 1}</span>
+                <button
+                  onClick={() => deleteQuestion(q.id)}
+                  className="text-red-500 hover:text-red-700 text-sm"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              
+              {editingQuestionId === q.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={q.prompt}
+                    onChange={e => updateQuestion(q.id, { prompt: e.target.value })}
+                    onBlur={() => setEditingQuestionId(null)}
+                    className="w-full p-2 border rounded resize-none"
+                    rows={2}
+                    autoFocus
+                    placeholder="Enter your interview question..."
+                  />
+                </div>
+              ) : (
+                <div
+                  onClick={() => setEditingQuestionId(q.id)}
+                  className="font-medium cursor-pointer hover:bg-gray-100 p-2 rounded border-2 border-dashed border-gray-300 hover:border-blue-400"
+                >
+                  {q.prompt || "Click to edit this question"}
+                  <Edit2 size={14} className="inline ml-2 text-gray-400" />
+                </div>
+              )}
+              
+              <div className="flex gap-4 mt-3">
+                <label className="text-sm text-gray-600">
+                  Time limit:
+                  <input
+                    type="number"
+                    value={q.timeLimitSec || 120}
+                    onChange={e => updateQuestion(q.id, { timeLimitSec: parseInt(e.target.value) || 120 })}
+                    className="ml-2 w-20 px-2 py-1 border rounded text-sm"
+                    min="30"
+                    max="600"
+                  />
+                  <span className="ml-1">seconds</span>
+                </label>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <button 
-        onClick={()=>onLaunch(selected)}
-        className="w-full px-4 py-3 bg-blue-600 text-white rounded font-medium hover:bg-blue-500"
-        disabled={!selected.questions.length}
-      >
-        Launch Interview
-      </button>
+      <div className="flex gap-3">
+        <button 
+          onClick={()=>onLaunch(selected)}
+          className="flex-1 px-4 py-3 bg-blue-600 text-white rounded font-medium hover:bg-blue-500"
+          disabled={!selected.questions.length}
+        >
+          Launch Interview ({selected.questions.length} questions)
+        </button>
+      </div>
     </div>
   );
 }
@@ -373,6 +508,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
   const [clips, setClips] = useState<RecordingClip[]>(template.questions.map(q=>({ qid: q.id })));
   const [driveStatus, setDriveStatus] = useState<string>("");
   const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [candidateName, setCandidateName] = useState("");
 
   useEffect(()=>{ 
     request().catch(()=>alert("Please allow camera & mic access to continue")); 
@@ -400,13 +536,13 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           
           // Auto-upload if enabled and all questions are done
           if (allDone && template.autoUploadOnFinish) {
-            exportAndUpload();
+            setTimeout(() => exportAndUpload(), 1000);
           }
           
           return next;
         });
       }
-    }, (q.timeLimitSec ?? 60) * 1000);
+    }, (q.timeLimitSec ?? 120) * 1000);
   };
 
   const exportAndUpload = async () => {
@@ -419,34 +555,42 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       template.questions.forEach((q, i) => {
         const clip = clips.find(c=>c.qid===q.id);
         if(clip?.blob) {
-          zip.file(`Q${i+1}_${q.prompt.slice(0,30).replace(/[^a-zA-Z0-9]/g,'_')}.webm`, clip.blob);
+          const fileName = `Q${i+1}_${q.prompt.slice(0,30).replace(/[^a-zA-Z0-9]/g,'_')}.webm`;
+          zip.file(fileName, clip.blob);
         }
       });
       
       // Add summary JSON
       const summary = {
+        candidate: candidateName || 'Anonymous',
         template: template.name,
         company: template.company,
         role: template.role,
         timestamp: new Date().toISOString(),
+        totalQuestions: template.questions.length,
+        answeredQuestions: clips.filter(c => c.blob).length,
         questions: template.questions.map((q, i) => ({
           number: i + 1,
           prompt: q.prompt,
-          hasAnswer: !!clips.find(c => c.qid === q.id)?.blob
+          timeLimitSec: q.timeLimitSec,
+          hasAnswer: !!clips.find(c => c.qid === q.id)?.blob,
+          answerDuration: clips.find(c => c.qid === q.id)?.durationMs || 0
         }))
       };
       zip.file('interview_summary.json', JSON.stringify(summary, null, 2));
       
       const blob = await zip.generateAsync({type:'blob'});
-      const fileName = `${template.company||'company'}_${template.role||'role'}_interview_${Date.now()}.zip`;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const candidatePrefix = candidateName ? `${candidateName.replace(/[^a-zA-Z0-9]/g, '_')}_` : '';
+      const fileName = `${candidatePrefix}${template.company||'company'}_${template.role||'role'}_interview_${timestamp}.zip`;
       
       if(template.driveClientId){
         setDriveStatus('Initializing Google Drive...');
         await driveClient.init(template.driveClientId);
         setDriveStatus('Uploading to Drive...');
         await driveClient.uploadZip(fileName, blob, template.driveFolderId);
-        setDriveStatus('Uploaded ✔');
-        alert('Successfully uploaded to Google Drive!');
+        setDriveStatus('✅ Uploaded to Google Drive successfully!');
+        alert('Interview successfully uploaded to Google Drive!');
       } else {
         // Local download
         const url = URL.createObjectURL(blob);
@@ -454,118 +598,176 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         a.href=url; 
         a.download=fileName; 
         a.click();
-        setDriveStatus('Downloaded ✔');
+        setDriveStatus('✅ Downloaded successfully!');
       }
     } catch (error) {
       console.error('Export failed:', error);
-      setDriveStatus('Export failed ✗');
-      alert('Export failed. Please try again.');
+      setDriveStatus('❌ Export failed - please try again');
+      alert('Export failed. Please try again or check your Google Drive settings.');
     }
   };
 
   const currentQ = template.questions[currentQuestion];
   const currentClip = clips.find(c => c.qid === currentQ?.id);
   const answeredCount = clips.filter(c => c.blob).length;
+  const allAnswered = answeredCount === template.questions.length;
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold">{template.company} – {template.role}</h2>
-        <p className="text-gray-600">Question {currentQuestion + 1} of {template.questions.length}</p>
-        <div className="text-sm text-gray-500 mt-1">
-          Answered: {answeredCount}/{template.questions.length}
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="mb-6 text-center">
+        <h2 className="text-2xl font-bold">{template.company} – {template.role}</h2>
+        <p className="text-gray-600 mt-1">Video Interview</p>
+        
+        <div className="mt-4 mb-4">
+          <input
+            type="text"
+            value={candidateName}
+            onChange={e => setCandidateName(e.target.value)}
+            placeholder="Enter your full name (optional)"
+            className="px-4 py-2 border rounded-lg text-center max-w-xs"
+          />
+        </div>
+        
+        <div className="flex justify-center gap-6 text-sm text-gray-500">
+          <span>Question {currentQuestion + 1} of {template.questions.length}</span>
+          <span>Answered: {answeredCount}/{template.questions.length}</span>
+          {allAnswered && <span className="text-green-600 font-medium">✅ All Complete!</span>}
         </div>
       </div>
 
-      <div className="mb-6">
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          muted 
-          className="w-full max-w-md mx-auto rounded border"
-        />
-        {driveStatus && <div className="text-xs text-zinc-500 mb-2 text-center mt-2">{driveStatus}</div>}
-      </div>
-
-      {currentQ && (
-        <div className="mb-6">
-          <div className="bg-gray-50 p-4 rounded mb-4">
-            <h3 className="font-medium mb-2">Question {currentQuestion + 1}</h3>
-            <p className="text-gray-800">{currentQ.prompt}</p>
-            {currentQ.guidance && (
-              <p className="text-sm text-gray-600 mt-2 italic">{currentQ.guidance}</p>
-            )}
-            <div className="text-xs text-gray-500 mt-2">
-              Time limit: {currentQ.timeLimitSec || 60} seconds
-            </div>
-          </div>
-
-          <div className="flex gap-3 justify-center">
-            {!currentClip?.blob ? (
-              <button
-                onClick={() => recordAnswer(currentQ)}
-                disabled={recording}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded font-medium ${
-                  recording 
-                    ? 'bg-red-600 text-white' 
-                    : 'bg-blue-600 text-white hover:bg-blue-500'
-                }`}
-              >
-                {recording ? (
-                  <>
-                    <CircleStop size={16}/> Recording... ({currentQ.timeLimitSec || 60}s)
-                  </>
-                ) : (
-                  <>
-                    <CirclePlay size={16}/> Start Recording
-                  </>
-                )}
-              </button>
-            ) : (
-              <div className="text-center">
-                <div className="text-green-600 font-medium mb-2">✓ Answer Recorded</div>
-                <video 
-                  src={currentClip.url} 
-                  controls 
-                  className="max-w-xs mx-auto rounded"
-                />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Video Section */}
+        <div className="space-y-4">
+          <div className="relative">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              muted 
+              className="w-full max-w-md mx-auto rounded-lg border shadow-lg"
+            />
+            {recording && (
+              <div className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 rounded text-sm font-medium animate-pulse">
+                REC
               </div>
             )}
           </div>
+          
+          {driveStatus && (
+            <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <div className="text-sm text-blue-700">{driveStatus}</div>
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="flex gap-3 justify-between">
-        <button
-          onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
-          disabled={currentQuestion === 0}
-          className="px-4 py-2 border rounded disabled:opacity-50"
-        >
-          Previous
-        </button>
+        {/* Question Section */}
+        <div className="space-y-4">
+          {currentQ && (
+            <div className="bg-white border rounded-lg p-6 shadow-sm">
+              <div className="mb-4">
+                <h3 className="font-semibold text-lg mb-3">Question {currentQuestion + 1}</h3>
+                <p className="text-gray-800 text-lg leading-relaxed">{currentQ.prompt}</p>
+                {currentQ.guidance && (
+                  <p className="text-sm text-gray-600 mt-3 italic">{currentQ.guidance}</p>
+                )}
+                <div className="text-sm text-gray-500 mt-3 flex items-center gap-4">
+                  <span>⏱️ Time limit: {currentQ.timeLimitSec || 120} seconds</span>
+                  {currentQ.required && <span className="text-red-500">* Required</span>}
+                </div>
+              </div>
 
-        <button
-          onClick={() => setCurrentQuestion(Math.min(template.questions.length - 1, currentQuestion + 1))}
-          disabled={currentQuestion === template.questions.length - 1}
-          className="px-4 py-2 border rounded disabled:opacity-50"
-        >
-          Next
-        </button>
+              <div className="space-y-3">
+                {!currentClip?.blob ? (
+                  <button
+                    onClick={() => recordAnswer(currentQ)}
+                    disabled={recording}
+                    className={`w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors ${
+                      recording 
+                        ? 'bg-red-600 text-white cursor-not-allowed' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {recording ? (
+                      <>
+                        <CircleStop size={20}/> 
+                        Recording... ({currentQ.timeLimitSec || 120}s)
+                      </>
+                    ) : (
+                      <>
+                        <CirclePlay size={20}/> 
+                        Start Recording Answer
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="text-center space-y-3">
+                    <div className="text-green-600 font-semibold flex items-center justify-center gap-2">
+                      ✅ Answer Recorded Successfully
+                    </div>
+                    <video 
+                      src={currentClip.url} 
+                      controls 
+                      className="w-full max-w-sm mx-auto rounded border"
+                    />
+                    <button
+                      onClick={() => {
+                        setClips(prev => prev.map(c => c.qid === currentQ.id ? { qid: c.qid } : c));
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Re-record this answer
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Navigation */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+              disabled={currentQuestion === 0}
+              className="px-4 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              ← Previous
+            </button>
+
+            <button
+              onClick={() => setCurrentQuestion(Math.min(template.questions.length - 1, currentQuestion + 1))}
+              disabled={currentQuestion === template.questions.length - 1}
+              className="px-4 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Next →
+            </button>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${(answeredCount / template.questions.length) * 100}%` }}
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="mt-6 pt-6 border-t">
+      {/* Actions */}
+      <div className="mt-8 pt-6 border-t flex flex-col sm:flex-row gap-3">
         <button
           onClick={exportAndUpload}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-500 mr-3"
+          disabled={answeredCount === 0}
+          className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
-          <CloudUpload size={16}/> Export + Upload
+          <CloudUpload size={20}/> 
+          {template.driveClientId ? 'Export & Upload to Drive' : 'Download Interview Package'}
+          {answeredCount > 0 && ` (${answeredCount} answers)`}
         </button>
         
         <button 
           onClick={onBack}
-          className="px-4 py-2 border rounded hover:bg-gray-50"
+          className="px-6 py-3 border rounded-lg hover:bg-gray-50 font-medium"
         >
-          Back to Templates
+          ← Back to Templates
         </button>
       </div>
     </div>
@@ -580,10 +782,10 @@ export default function App(){
   
   return(
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b mb-6">
-        <div className="max-w-2xl mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">AI Interview App</h1>
-          <p className="text-sm text-gray-600">Record video interviews for any company or role</p>
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <h1 className="text-3xl font-bold text-gray-900">AI Interview App</h1>
+          <p className="text-gray-600 mt-1">Record professional video interviews for any company or role</p>
         </div>
       </div>
       
