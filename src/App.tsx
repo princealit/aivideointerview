@@ -626,7 +626,7 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
 
 // ---------- Candidate View ----------
 
-function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBack: ()=>void }) {
+function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBack?: ()=>void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { stream, request, start, stop, recording, stopTracks } = useRecorder();
   const [clips, setClips] = useState<RecordingClip[]>(template.questions.map(q=>({ qid: q.id })));
