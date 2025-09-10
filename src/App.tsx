@@ -802,9 +802,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       // Send notification to interviewer and provide download
       setDriveStatus('Submitting interview...');
       
-      // Create download link for the interviewer
-      const url = URL.createObjectURL(blob);
-      const downloadUrl = url;
+      // Prepare data for submission (no immediate URL creation needed)
       
       // Upload file to server for interviewer
       try {
@@ -860,20 +858,19 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           
         } catch (notifyError) {
           console.log('Both upload and notification failed, providing download instead');
+          
+          // Auto-download with clear instructions
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); 
+          a.href = url; 
+          a.download = fileName; 
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          
+          setDriveStatus('✅ Interview completed and downloaded!');
+          alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
         }
-      }
-        
-        // Auto-download with clear instructions
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); 
-        a.href = url; 
-        a.download = fileName; 
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        setDriveStatus('✅ Interview completed and downloaded!');
-        alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
       }
       
       // Note: URL cleanup omitted to avoid interfering with try/catch structure
