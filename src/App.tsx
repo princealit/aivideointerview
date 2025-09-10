@@ -690,6 +690,11 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
 
   const [recordingQuestionId, setRecordingQuestionId] = useState<string | null>(null);
   const [recordingTimeLeft, setRecordingTimeLeft] = useState<number>(0);
+  const ensureRecordingStopped = async () => {
+    if (recordingQuestionId) {
+      await stopRecording(recordingQuestionId);
+    }
+  };
 
   const recordAnswer = async (q: InterviewQuestion) => {
     try {
@@ -762,6 +767,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
 
   const exportAndUpload = async () => {
     try {
+      await ensureRecordingStopped();
       setDriveStatus('Preparing export...');
       
       const { default: JSZip } = await import('jszip');
@@ -1018,7 +1024,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           {/* Navigation */}
           <div className="flex gap-3">
             <button
-              onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+              onClick={async () => { await ensureRecordingStopped(); setCurrentQuestion(Math.max(0, currentQuestion - 1)); }}
               disabled={currentQuestion === 0}
               className="px-4 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
@@ -1026,7 +1032,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
             </button>
 
             <button
-              onClick={() => setCurrentQuestion(Math.min(template.questions.length - 1, currentQuestion + 1))}
+              onClick={async () => { await ensureRecordingStopped(); setCurrentQuestion(Math.min(template.questions.length - 1, currentQuestion + 1)); }}
               disabled={currentQuestion === template.questions.length - 1}
               className="px-4 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
