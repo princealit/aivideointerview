@@ -220,11 +220,13 @@ function useRecorder() {
   };
 
   const stop = async (): Promise<Blob | null> => {
-    if (!recorder) return null;
+    if (!recorder || !recording) return null;
     return new Promise(resolve => {
+      const currentChunks = [...chunks];
       recorder.onstop = () => {
         setRecording(false);
-        const blob = new Blob(chunks, { type: "video/webm" });
+        setRecorder(null);
+        const blob = new Blob(currentChunks, { type: "video/webm" });
         setChunks([]);
         resolve(blob);
       };
@@ -646,27 +648,76 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
     } 
   },[stream]);
 
+  const [recordingQuestionId, setRecordingQuestionId] = useState<string | null>(null);
+  const [recordingTimeLeft, setRecordingTimeLeft] = useState<number>(0);
+
   const recordAnswer = async (q: InterviewQuestion) => {
-    await start();
-    setTimeout(async () => {
-      const blob = await stop();
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        setClips(prev => {
-          const next = prev.map(c => c.qid === q.id ? { ...c, blob, url } : c);
-          
-          // Check if all questions have been answered
-          const allDone = template.questions.every(qq => next.find(c => c.qid === qq.id)?.blob);
-          
-          // Auto-upload if enabled and all questions are done
-          if (allDone && template.autoUploadOnFinish) {
-            setTimeout(() => exportAndUpload(), 1000);
+    try {
+      setRecordingQuestionId(q.id);
+      const timeLimit = (q.timeLimitSec ?? 120) * 1000;
+      setRecordingTimeLeft(q.timeLimitSec ?? 120);
+      
+      await start();
+      
+      // Countdown timer
+      const countdownInterval = setInterval(() => {
+        setRecordingTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            return 0;
           }
-          
-          return next;
+          return prev - 1;
         });
-      }
-    }, (q.timeLimitSec ?? 120) * 1000);
+      }, 1000);
+      
+      // Auto-stop after time limit
+      const autoStopTimeout = setTimeout(async () => {
+        clearInterval(countdownInterval);
+        await stopRecording(q.id);
+      }, timeLimit);
+      
+      // Store timeout and interval for manual stop
+      (window as any).currentRecordingTimeout = autoStopTimeout;
+      (window as any).currentRecordingInterval = countdownInterval;
+      
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      alert('Failed to start recording. Please check camera/microphone permissions.');
+      setRecordingQuestionId(null);
+    }
+  };
+
+  const stopRecording = async (questionId: string) => {
+    if (recordingQuestionId !== questionId) return;
+    
+    // Clear any existing timeouts
+    if ((window as any).currentRecordingTimeout) {
+      clearTimeout((window as any).currentRecordingTimeout);
+    }
+    if ((window as any).currentRecordingInterval) {
+      clearInterval((window as any).currentRecordingInterval);
+    }
+    
+    const blob = await stop();
+    setRecordingQuestionId(null);
+    setRecordingTimeLeft(0);
+    
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      setClips(prev => {
+        const next = prev.map(c => c.qid === questionId ? { ...c, blob, url } : c);
+        
+        // Check if all questions have been answered
+        const allDone = template.questions.every(qq => next.find(c => c.qid === qq.id)?.blob);
+        
+        // Auto-upload if enabled and all questions are done
+        if (allDone && template.autoUploadOnFinish) {
+          setTimeout(() => exportAndUpload(), 1000);
+        }
+        
+        return next;
+      });
+    }
   };
 
   const exportAndUpload = async () => {
@@ -801,27 +852,34 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
 
               <div className="space-y-3">
                 {!currentClip?.blob ? (
-                  <button
-                    onClick={() => recordAnswer(currentQ)}
-                    disabled={recording}
-                    className={`w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors ${
-                      recording 
-                        ? 'bg-red-600 text-white cursor-not-allowed' 
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    {recording ? (
-                      <>
-                        <CircleStop size={20}/> 
-                        Recording... ({currentQ.timeLimitSec || 120}s)
-                      </>
+                  <>
+                    {recordingQuestionId === currentQ.id ? (
+                      <div className="space-y-3">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-red-600 mb-2">
+                            {Math.floor(recordingTimeLeft / 60)}:{(recordingTimeLeft % 60).toString().padStart(2, '0')}
+                          </div>
+                          <div className="text-sm text-gray-600">Recording in progress...</div>
+                        </div>
+                        <button
+                          onClick={() => stopRecording(currentQ.id)}
+                          className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                        >
+                          <CircleStop size={20}/> 
+                          Stop Recording
+                        </button>
+                      </div>
                     ) : (
-                      <>
+                      <button
+                        onClick={() => recordAnswer(currentQ)}
+                        disabled={recording || recordingQuestionId !== null}
+                        className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
                         <CirclePlay size={20}/> 
                         Start Recording Answer
-                      </>
+                      </button>
                     )}
-                  </button>
+                  </>
                 ) : (
                   <div className="text-center space-y-3">
                     <div className="text-green-600 font-semibold flex items-center justify-center gap-2">
