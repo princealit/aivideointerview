@@ -15,10 +15,12 @@ export default async function handler(req, res) {
     await new Promise((resolve) => req.on('end', resolve));
 
     const buffer = Buffer.concat(chunks);
-    const fileName = req.headers['x-filename'] || `interview_${Date.now()}.zip`;
+    const baseName = req.headers['x-filename'] || `interview_${Date.now()}.zip`;
+    const fileName = `interviews/${baseName}`;
     const contentType = req.headers['content-type'] || 'application/zip';
 
-    const { url } = await put(fileName, buffer, { access: 'private', contentType });
+    // Use public access so you can click-to-download from the admin list
+    const { url } = await put(fileName, buffer, { access: 'public', contentType });
 
     return res.status(200).json({ success: true, url, fileName });
   } catch (e) {

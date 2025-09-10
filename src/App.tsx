@@ -1063,7 +1063,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
 // ---------- Main App ----------
 
 export default function App(){
-  const [mode,setMode]=useState<'admin'|'candidate'>('admin');
+  const [mode,setMode]=useState<'admin'|'candidate'|'submissions'>('admin');
   const [active,setActive]=useState<InterviewTemplate|null>(null);
   
   // Check if this is a candidate link
@@ -1090,8 +1090,59 @@ export default function App(){
         </div>
       </div>
       
+      <div className="max-w-6xl mx-auto px-6 mt-4 flex gap-2">
+        <button className={`px-3 py-1 rounded border ${mode==='admin'?'bg-gray-900 text-white':''}`} onClick={()=>setMode('admin')}>Templates</button>
+        <button className={`px-3 py-1 rounded border ${mode==='submissions'?'bg-gray-900 text-white':''}`} onClick={()=>setMode('submissions')}>Submissions</button>
+      </div>
+
       {mode==='admin'&&<AdminPanel onLaunch={(t)=>{setActive(t);setMode('candidate')}}/>}
-      {mode==='candidate'&&active&&<CandidateView template={active} onBack={getTemplateFromUrl() ? undefined : ()=>setMode('admin')}/>}    
+      {mode==='candidate'&&active&&<CandidateView template={active} onBack={getTemplateFromUrl() ? undefined : ()=>setMode('admin')}/>}
+      {mode==='submissions'&&<SubmissionsPanel/>}
+    </div>
+  );
+}
+
+function SubmissionsPanel(){
+  const [files,setFiles]=useState<{pathname:string;url:string;size:number;uploadedAt:string}[]>([]);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState<string>('');
+
+  const refresh = async () => {
+    setLoading(true); setError('');
+    try{
+      const res = await fetch('/api/list-interviews');
+      const data = await res.json();
+      setFiles(data.files||[]);
+    }catch(e:any){
+      setError('Failed to load submissions');
+    }finally{ setLoading(false); }
+  };
+
+  useEffect(()=>{ refresh(); },[]);
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">Interview Submissions</h2>
+        <button onClick={refresh} className="px-3 py-1 border rounded">Refresh</button>
+      </div>
+      {loading && <div>Loading…</div>}
+      {error && <div className="text-red-600">{error}</div>}
+      {!loading && !files.length && <div>No submissions yet.</div>}
+      <div className="space-y-2">
+        {files.map(f=> (
+          <div key={f.pathname} className="flex items-center justify-between border rounded p-3">
+            <div>
+              <div className="font-mono text-sm">{f.pathname}</div>
+              <div className="text-xs text-gray-500">{(f.size/1024/1024).toFixed(2)} MB • {new Date(f.uploadedAt).toLocaleString()}</div>
+            </div>
+            <div className="flex gap-2">
+              <a className="px-3 py-1 border rounded bg-green-600 text-white" href={f.url} target="_blank" rel="noreferrer">Download</a>
+              <button className="px-3 py-1 border rounded" onClick={()=> navigator.clipboard.writeText(f.url)}>Copy Link</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
