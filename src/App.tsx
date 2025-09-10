@@ -913,6 +913,14 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       
       // Upload file to Vercel Blob (server-side storage)
       try {
+        console.log('📤 Attempting upload:', {
+          fileName,
+          blobSize: blob.size,
+          candidateName: candidateName || 'Anonymous',
+          company: template.company,
+          role: template.role
+        });
+        
         const uploadResponse = await fetch('/api/store-interview', {
           method: 'POST',
           headers: {
@@ -931,8 +939,15 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           body: blob,
         });
 
+        console.log('📥 Upload response:', {
+          status: uploadResponse.status,
+          statusText: uploadResponse.statusText,
+          ok: uploadResponse.ok
+        });
+        
         if (uploadResponse.ok) {
-          const { fileName } = await uploadResponse.json();
+          const responseData = await uploadResponse.json();
+          console.log('✅ Upload successful:', responseData);
           setDriveStatus('✅ Interview submitted successfully!');
           
           // Auto-download the file for the candidate using the local blob
@@ -948,11 +963,23 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
           return;
         } else {
-          throw new Error('Upload failed');
+          const errorText = await uploadResponse.text();
+          console.error('❌ Upload failed:', {
+            status: uploadResponse.status,
+            statusText: uploadResponse.statusText,
+            errorBody: errorText
+          });
+          throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
         }
         
       } catch (uploadError) {
-        console.log('Server upload failed, trying notification instead');
+        console.error('❌ Server upload failed:', uploadError);
+        console.error('Upload error details:', {
+          error: uploadError.message,
+          fileName,
+          blobSize: blob.size,
+          timestamp: new Date().toISOString()
+        });
         
         // Fallback to notification-only approach
         try {
