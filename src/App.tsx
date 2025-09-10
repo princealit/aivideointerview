@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
+import { FFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, CirclePlay, CircleStop, Download, Loader2, Mic, Play, Settings, Trash2, Video, Wand2, CloudUpload, Edit2, Copy, Share, Link } from "lucide-react";
 
@@ -776,10 +776,8 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       
       // Merge clips into a single webm using ffmpeg.wasm
       setDriveStatus('Merging videos...');
-      const ffmpeg = createFFmpeg({ log: false });
-      if (!ffmpeg.isLoaded()) {
-        await ffmpeg.load();
-      }
+      const ffmpeg = new FFmpeg();
+      if (!ffmpeg.loaded) await ffmpeg.load();
       // Write all recorded blobs to ffmpeg FS
       const recorded = template.questions.map((q, i) => ({ q, clip: clips.find(c => c.qid === q.id) }));
       const inputNames: string[] = [];
@@ -788,7 +786,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         if (rc.clip?.blob) {
           const name = `in${i}.webm`;
           inputNames.push(name);
-          ffmpeg.FS('writeFile', name, await fetchFile(rc.clip.blob));
+          await ffmpeg.writeFile(name, await fetchFile(rc.clip.blob));
         }
       }
       let mergedBlob: Blob | null = null;
@@ -803,15 +801,15 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         });
         const filterComplex = `${mapInputs.join('')}concat=n=${inputNames.length}:v=1:a=1[v][a]`;
         const outName = 'merged.webm';
-        await ffmpeg.run(
+        await ffmpeg.exec([
           ...args,
           '-filter_complex', filterComplex,
           '-map', '[v]', '-map', '[a]',
           '-c:v', 'libvpx-vp9', '-c:a', 'libopus',
           outName
-        );
-        const data = ffmpeg.FS('readFile', outName);
-        mergedBlob = new Blob([data.buffer], { type: 'video/webm' });
+        ]);
+        const data = await ffmpeg.readFile(outName);
+        mergedBlob = new Blob([data], { type: 'video/webm' });
       }
       
       template.questions.forEach((q, i) => {
