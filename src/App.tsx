@@ -820,7 +820,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         }
       } else if (videoClips.length === 1) {
         // If only one video, use it as the merged file
-        mergedBlob = videoClips[0].clip!.blob;
+        mergedBlob = videoClips[0].clip?.blob || null;
         console.log('✅ Single video used as merged file');
       }
       
