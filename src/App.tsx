@@ -848,7 +848,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
             const verifyResponse = await fetch('/api/list-interviews');
             if (verifyResponse.ok) {
               const interviews = await verifyResponse.json();
-              const uploadedInterview = interviews.blobs?.find(b => b.pathname.includes(fileName.split('/')[1]));
+              const uploadedInterview = interviews.blobs?.find((b: any) => b.pathname.includes(fileName.split('/')[1]));
               if (uploadedInterview) {
                 console.log('✅ Upload verified - interview found in submissions');
                 alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to admin submissions and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\n📧 Admin has been notified at srn@synapserecruiternetwork.com`);
