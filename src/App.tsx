@@ -911,17 +911,21 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
       
       // Prepare data for submission (no immediate URL creation needed)
       
-      // Upload file to Vercel Blob (server-side storage)
-      try {
-        console.log('📤 Attempting upload:', {
-          fileName,
-          blobSize: blob.size,
-          candidateName: candidateName || 'Anonymous',
-          company: template.company,
-          role: template.role
-        });
-        
-        const uploadResponse = await fetch('/api/store-interview', {
+      // Upload file to Vercel Blob (server-side storage) with retry
+      let uploadSuccess = false;
+      let lastError = null;
+      
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`📤 Upload attempt ${attempt}/3:`, {
+            fileName,
+            blobSize: blob.size,
+            candidateName: candidateName || 'Anonymous',
+            company: template.company,
+            role: template.role
+          });
+          
+          const uploadResponse = await fetch('/api/store-interview', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/zip',
@@ -947,8 +951,9 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         
         if (uploadResponse.ok) {
           const responseData = await uploadResponse.json();
-          console.log('✅ Upload successful:', responseData);
+          console.log('✅ Upload successful on attempt', attempt, ':', responseData);
           setDriveStatus('✅ Interview submitted successfully!');
+          uploadSuccess = true;
           
           // Auto-download the file for the candidate using the local blob
           const url = URL.createObjectURL(blob);
@@ -961,64 +966,55 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           URL.revokeObjectURL(url);
           
           alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
-          return;
+          break;
         } else {
           const errorText = await uploadResponse.text();
-          console.error('❌ Upload failed:', {
+          console.error(`❌ Upload attempt ${attempt} failed:`, {
             status: uploadResponse.status,
             statusText: uploadResponse.statusText,
             errorBody: errorText
           });
-          throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+          lastError = new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+          
+          if (attempt < 3) {
+            console.log(`⏳ Retrying in 2 seconds...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
         }
         
-      } catch (uploadError) {
-        console.error('❌ Server upload failed:', uploadError);
+      } catch (attemptError) {
+        console.error(`❌ Upload attempt ${attempt} error:`, attemptError);
+        lastError = attemptError;
+        
+        if (attempt < 3) {
+          console.log(`⏳ Retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      }
+      
+      // If all attempts failed
+      if (!uploadSuccess) {
+        console.error('❌ All upload attempts failed:', lastError);
         console.error('Upload error details:', {
-          error: uploadError instanceof Error ? uploadError.message : String(uploadError),
+          error: lastError instanceof Error ? lastError.message : String(lastError),
           fileName,
           blobSize: blob.size,
           timestamp: new Date().toISOString()
         });
         
-        // Fallback to notification-only approach
-        try {
-          const notificationData = {
-            candidateName: candidateName || 'Anonymous',
-            templateName: template.name,
-            company: template.company,
-            role: template.role,
-            fileName: fileName,
-            answeredQuestions: answeredCount,
-            totalQuestions: template.questions.length,
-            timestamp: new Date().toISOString()
-          };
-          
-          await fetch('/api/notify-interviewer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(notificationData)
-          });
-          
-          setDriveStatus('✅ Interview submitted successfully!');
-          alert(`Interview submitted successfully!\n\nThe interviewer has been notified.\nCandidate: ${candidateName || 'Anonymous'}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
-          return;
-          
-        } catch (notifyError) {
-          console.log('Both upload and notification failed, providing download instead');
-          
-          // Auto-download with clear instructions
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a'); 
-          a.href = url; 
-          a.download = fileName; 
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          
-          setDriveStatus('✅ Interview completed and downloaded!');
-          alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
-        }
+        // FORCE LOCAL DOWNLOAD - Don't hide the failure!
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); 
+        a.href = url; 
+        a.download = fileName; 
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setDriveStatus('⚠️ Upload failed - File downloaded locally');
+        alert(`⚠️ UPLOAD FAILED BUT FILE SAVED!\n\nFile downloaded: ${fileName}\n\n🚨 CRITICAL: PLEASE EMAIL THIS FILE IMMEDIATELY TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nTechnical Error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
       }
       
       // Note: URL cleanup omitted to avoid interfering with try/catch structure
