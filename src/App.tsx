@@ -869,12 +869,16 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           console.error(`❌ Upload attempt ${attempt} failed:`, {
             status: uploadResponse.status,
             statusText: uploadResponse.statusText,
-            errorBody: errorText
+            errorBody: errorText,
+            url: uploadResponse.url,
+            headers: Object.fromEntries(uploadResponse.headers.entries())
           });
-          lastError = new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+          
+          lastError = new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText} - ${errorText}`);
           
           if (attempt < 3) {
-            console.log(`⏳ Retrying in 2 seconds...`);
+            console.log(`⏳ Retrying in 2 seconds... (attempt ${attempt + 1}/3)`);
+            setDriveStatus(`⏳ Upload failed, retrying... (${attempt + 1}/3)`);
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
