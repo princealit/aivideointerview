@@ -952,8 +952,23 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         if (uploadResponse.ok) {
           const responseData = await uploadResponse.json();
           console.log('✅ Upload successful on attempt', attempt, ':', responseData);
-          setDriveStatus('✅ Interview submitted successfully!');
+          setDriveStatus('✅ Interview submitted - uploading to Google Drive...');
           uploadSuccess = true;
+          
+          // ALSO upload to Google Drive
+          try {
+            const globalSettings = loadGlobalSettings();
+            if (globalSettings.driveClientId && globalSettings.driveFolderId) {
+              console.log('📤 Uploading to Google Drive...');
+              await driveClient.init(globalSettings.driveClientId);
+              const driveResult = await driveClient.uploadZip(fileName, blob, globalSettings.driveFolderId);
+              console.log('✅ Google Drive upload successful:', driveResult);
+              setDriveStatus('✅ Interview submitted to cloud storage AND Google Drive!');
+            }
+          } catch (driveError) {
+            console.warn('⚠️ Google Drive upload failed:', driveError);
+            setDriveStatus('✅ Interview submitted to cloud storage (Google Drive upload failed)');
+          }
           
           // Auto-download the file for the candidate using the local blob
           const url = URL.createObjectURL(blob);
@@ -965,7 +980,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
           
-          alert(`✅ INTERVIEW COMPLETED!\n\nFile downloaded: ${fileName}\n\n📧 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to Google Drive and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
           break;
         } else {
           const errorText = await uploadResponse.text();
@@ -1003,6 +1018,23 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           timestamp: new Date().toISOString()
         });
         
+        // Try Google Drive as backup even if cloud storage failed
+        let driveUploadSuccess = false;
+        try {
+          const globalSettings = loadGlobalSettings();
+          if (globalSettings.driveClientId && globalSettings.driveFolderId) {
+            console.log('📤 Cloud storage failed, trying Google Drive backup...');
+            setDriveStatus('Cloud storage failed - trying Google Drive backup...');
+            await driveClient.init(globalSettings.driveClientId);
+            const driveResult = await driveClient.uploadZip(fileName, blob, globalSettings.driveFolderId);
+            console.log('✅ Google Drive backup upload successful:', driveResult);
+            setDriveStatus('✅ Interview saved to Google Drive (cloud storage failed)');
+            driveUploadSuccess = true;
+          }
+        } catch (driveError) {
+          console.warn('⚠️ Google Drive backup also failed:', driveError);
+        }
+        
         // FORCE LOCAL DOWNLOAD - Don't hide the failure!
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); 
@@ -1013,8 +1045,13 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        setDriveStatus('⚠️ Upload failed - File downloaded locally');
-        alert(`⚠️ UPLOAD FAILED BUT FILE SAVED!\n\nFile downloaded: ${fileName}\n\n🚨 CRITICAL: PLEASE EMAIL THIS FILE IMMEDIATELY TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nTechnical Error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+        if (driveUploadSuccess) {
+          setDriveStatus('✅ Interview saved to Google Drive + downloaded locally');
+          alert(`✅ INTERVIEW SAVED TO GOOGLE DRIVE!\n\nFile also downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nNote: Cloud storage failed but Google Drive backup succeeded!`);
+        } else {
+          setDriveStatus('⚠️ All uploads failed - File downloaded locally');
+          alert(`⚠️ UPLOAD FAILED BUT FILE SAVED!\n\nFile downloaded: ${fileName}\n\n🚨 CRITICAL: PLEASE EMAIL THIS FILE IMMEDIATELY TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nTechnical Error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+        }
       }
       
       // Note: URL cleanup omitted to avoid interfering with try/catch structure
