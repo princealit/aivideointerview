@@ -376,12 +376,10 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
 
   const duplicateTemplate = () => {
     if (!selected) return;
-    const t: InterviewTemplate = {
-      ...selected,
+    const t: InterviewTemplate = { 
+      ...selected, 
       id: uid(),
-      name: `${selected.name} (Copy)`,
-      driveClientId: globalSettings.driveClientId,
-      driveFolderId: globalSettings.driveFolderId,
+      name: `${selected.name} (Copy)`
     };
     const next = [t, ...templates];
     setTemplates(next); 
