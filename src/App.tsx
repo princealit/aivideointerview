@@ -39,9 +39,6 @@ type InterviewTemplate = {
   outro?: string;
   questions: InterviewQuestion[];
   rubric?: string;
-  driveClientId?: string;
-  driveFolderId?: string;
-  autoUploadOnFinish?: boolean;
 };
 
 type RecordingClip = {
@@ -369,10 +366,7 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
       name: "New Template", 
       company: "", 
       role: "", 
-      questions: [],
-      driveClientId: globalSettings.driveClientId,
-      driveFolderId: globalSettings.driveFolderId,
-      autoUploadOnFinish: true
+      questions: []
     };
     const next = [t, ...templates];
     setTemplates(next); 
