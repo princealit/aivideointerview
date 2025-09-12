@@ -54,10 +54,7 @@ type RecordingClip = {
   keywordHits?: string[];
 };
 
-type GlobalSettings = {
-  driveClientId: string;
-  driveFolderId: string;
-};
+// Google Drive settings removed - all interviews save to admin submissions only
 
 // ---------- Utilities ----------
 
@@ -93,87 +90,7 @@ const totalWeighted = (clips: RecordingClip[], tmpl: InterviewTemplate) => {
 
 // ---------- Google Drive Upload ----------
 
-const DRIVE_DISCOVERY = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest";
-
-const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
-  if (document.querySelector(`script[src="${src}"]`)) return resolve();
-  const s = document.createElement('script');
-  s.src = src; s.async = true;
-  s.onload = () => resolve();
-  s.onerror = () => reject(new Error(`Failed to load ${src}`));
-  document.head.appendChild(s);
-});
-
-const driveClient: any = {
-  ready: false,
-  token: undefined,
-  async init(clientId: string) {
-    try {
-      await loadScript("https://accounts.google.com/gsi/client");
-      await loadScript("https://apis.google.com/js/api.js");
-      // @ts-ignore
-      await new Promise<void>(res => gapi.load('client', () => res()));
-      // @ts-ignore
-      await gapi.client.init({ discoveryDocs: [DRIVE_DISCOVERY] });
-      
-      // @ts-ignore
-      this._tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.file',
-        redirect_uri: window.location.origin,
-        callback: (resp: any) => {
-          if (resp.error) {
-            console.error('OAuth error:', resp.error);
-            throw new Error(`Google Drive authentication failed: ${resp.error}`);
-          }
-          this.token = resp.access_token;
-          // @ts-ignore
-          gapi.client.setToken({ access_token: this.token });
-        },
-      });
-      this.ready = true;
-    } catch (error) {
-      console.error('Drive client initialization failed:', error);
-      throw new Error('Failed to initialize Google Drive. Please check your Client ID.');
-    }
-  },
-  async ensureAuth() {
-    if (this.token) return;
-    
-    return new Promise<void>((resolve, reject) => {
-      try {
-        // @ts-ignore
-        this._tokenClient.requestAccessToken({ 
-          prompt: 'consent',
-          callback: (response: any) => {
-            if (response.error) {
-              reject(new Error(`Authentication failed: ${response.error}`));
-            } else {
-              resolve();
-            }
-          }
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  },
-  async uploadZip(fileName: string, blob: Blob, folderId?: string) {
-    await this.ensureAuth();
-    const metadata: any = { name: fileName, mimeType: 'application/zip' };
-    if (folderId) metadata.parents = [folderId];
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', blob);
-    // @ts-ignore
-    const res = await gapi.client.request({
-      path: '/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
-      method: 'POST',
-      body: form,
-    });
-    return res.result;
-  }
-};
+// Google Drive removed - interviews now save to admin submissions panel only
 
 // ---------- Local Storage ----------
 
@@ -192,23 +109,7 @@ const loadTemplates = (): InterviewTemplate[] => {
 
 const saveTemplates = (t: InterviewTemplate[]) => localStorage.setItem(LS_KEY_TEMPLATES, JSON.stringify(t));
 
-const loadGlobalSettings = (): GlobalSettings => {
-  try {
-    const s = localStorage.getItem(LS_KEY_GLOBAL_SETTINGS);
-    if (!s) return {
-      driveClientId: "138878321119-dqs9tqvft80lf5v1hv2ssndostv7n64q.apps.googleusercontent.com",
-      driveFolderId: "16wDvuUeX3pC77MRcdzCwoTTMmD2a3gOE"
-    };
-    return JSON.parse(s) as GlobalSettings;
-  } catch {
-    return {
-      driveClientId: "138878321119-dqs9tqvft80lf5v1hv2ssndostv7n64q.apps.googleusercontent.com",
-      driveFolderId: "16wDvuUeX3pC77MRcdzCwoTTMmD2a3gOE"
-    };
-  }
-};
-
-const saveGlobalSettings = (settings: GlobalSettings) => localStorage.setItem(LS_KEY_GLOBAL_SETTINGS, JSON.stringify(settings));
+// Google Drive settings functions removed
 
 // ---------- URL Utilities ----------
 
@@ -382,7 +283,7 @@ function ShareModal({ template, onClose }: { template: InterviewTemplate; onClos
             <li>3. Enter their full name (optional but recommended)</li>
             <li>4. Answer each question within the time limit</li>
             <li>5. Navigate between questions using Previous/Next buttons</li>
-            <li>6. {template.autoUploadOnFinish ? 'Answers will auto-upload to Google Drive when complete' : 'Click "Export & Upload" when finished'}</li>
+            <li>6. Click "Submit Interview" when finished - files will be saved to admin panel</li>
           </ol>
         </div>
 
@@ -411,17 +312,13 @@ function ShareModal({ template, onClose }: { template: InterviewTemplate; onClos
 function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void }) {
   const [templates, setTemplates] = useState<InterviewTemplate[]>(loadTemplates());
   const [selectedId, setSelectedId] = useState<string>(templates[0]?.id);
-  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>(loadGlobalSettings());
+  // Google Drive settings removed
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   
   const selected = useMemo(() => templates.find(t => t.id === selectedId)!, [templates, selectedId]);
 
-  const updateGlobalSettings = (patch: Partial<GlobalSettings>) => {
-    const newSettings = { ...globalSettings, ...patch };
-    setGlobalSettings(newSettings);
-    saveGlobalSettings(newSettings);
-  };
+  // Google Drive settings functions removed
 
   const addQuestion = () => {
     const q: InterviewQuestion = { 
@@ -440,9 +337,7 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
   const updateTemplate = (patch: Partial<InterviewTemplate>) => {
     const next = templates.map(t => t.id === selected.id ? { 
       ...t, 
-      ...patch,
-      driveClientId: patch.driveClientId !== undefined ? patch.driveClientId : globalSettings.driveClientId,
-      driveFolderId: patch.driveFolderId !== undefined ? patch.driveFolderId : globalSettings.driveFolderId,
+      ...patch
     } : t);
     setTemplates(next); 
     saveTemplates(next);
@@ -519,28 +414,7 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
     <div className="p-6 max-w-4xl mx-auto">
       <h2 className="text-lg font-bold mb-4">AI Interview Templates</h2>
       
-      {/* Global Settings */}
-      <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-        <h3 className="font-medium mb-3 text-blue-800">Global Google Drive Settings</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-blue-700">Client ID (saved globally)</label>
-            <input 
-              value={globalSettings.driveClientId} 
-              onChange={e=>updateGlobalSettings({driveClientId:e.target.value})}
-              className="w-full p-2 border rounded mt-1 text-xs"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-blue-700">Folder ID (saved globally)</label>
-            <input 
-              value={globalSettings.driveFolderId} 
-              onChange={e=>updateGlobalSettings({driveFolderId:e.target.value})}
-              className="w-full p-2 border rounded mt-1 text-xs"
-            />
-          </div>
-        </div>
-      </div>
+      {/* Google Drive settings removed - all interviews save to admin submissions panel */}
       
       <div className="mb-4 flex gap-2">
         <select 
@@ -594,15 +468,7 @@ function AdminPanel({ onLaunch }: { onLaunch: (tmpl: InterviewTemplate) => void 
           </label>
         </div>
 
-        <label className="flex items-center gap-2 mt-2">
-          <input
-            type="checkbox"
-            checked={!!selected.autoUploadOnFinish}
-            onChange={e => updateTemplate({ autoUploadOnFinish: e.target.checked })}
-            className="rounded"
-          />
-          <span className="text-sm">Auto-upload to Drive when finished</span>
-        </label>
+        {/* Auto-upload checkbox removed - all interviews automatically save to admin submissions */}
       </div>
 
       <div className="mb-6">
@@ -955,20 +821,8 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           setDriveStatus('✅ Interview submitted - uploading to Google Drive...');
           uploadSuccess = true;
           
-          // ALSO upload to Google Drive
-          try {
-            const globalSettings = loadGlobalSettings();
-            if (globalSettings.driveClientId && globalSettings.driveFolderId) {
-              console.log('📤 Uploading to Google Drive...');
-              await driveClient.init(globalSettings.driveClientId);
-              const driveResult = await driveClient.uploadZip(fileName, blob, globalSettings.driveFolderId);
-              console.log('✅ Google Drive upload successful:', driveResult);
-              setDriveStatus('✅ Interview submitted to cloud storage AND Google Drive!');
-            }
-          } catch (driveError) {
-            console.warn('⚠️ Google Drive upload failed:', driveError);
-            setDriveStatus('✅ Interview submitted to cloud storage (Google Drive upload failed)');
-          }
+          // Interview saved to admin submissions panel
+          setDriveStatus('✅ Interview submitted successfully!');
           
           // Auto-download the file for the candidate using the local blob
           const url = URL.createObjectURL(blob);
@@ -980,7 +834,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
           
-          alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to Google Drive and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to admin submissions and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
           break;
         } else {
           const errorText = await uploadResponse.text();
@@ -1018,22 +872,8 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           timestamp: new Date().toISOString()
         });
         
-        // Try Google Drive as backup even if cloud storage failed
-        let driveUploadSuccess = false;
-        try {
-          const globalSettings = loadGlobalSettings();
-          if (globalSettings.driveClientId && globalSettings.driveFolderId) {
-            console.log('📤 Cloud storage failed, trying Google Drive backup...');
-            setDriveStatus('Cloud storage failed - trying Google Drive backup...');
-            await driveClient.init(globalSettings.driveClientId);
-            const driveResult = await driveClient.uploadZip(fileName, blob, globalSettings.driveFolderId);
-            console.log('✅ Google Drive backup upload successful:', driveResult);
-            setDriveStatus('✅ Interview saved to Google Drive (cloud storage failed)');
-            driveUploadSuccess = true;
-          }
-        } catch (driveError) {
-          console.warn('⚠️ Google Drive backup also failed:', driveError);
-        }
+        // No Google Drive backup - just local download
+        setDriveStatus('⚠️ Cloud storage failed - File downloaded locally');
         
         // FORCE LOCAL DOWNLOAD - Don't hide the failure!
         const url = URL.createObjectURL(blob);
@@ -1045,13 +885,8 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        if (driveUploadSuccess) {
-          setDriveStatus('✅ Interview saved to Google Drive + downloaded locally');
-          alert(`✅ INTERVIEW SAVED TO GOOGLE DRIVE!\n\nFile also downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nNote: Cloud storage failed but Google Drive backup succeeded!`);
-        } else {
-          setDriveStatus('⚠️ All uploads failed - File downloaded locally');
-          alert(`⚠️ UPLOAD FAILED BUT FILE SAVED!\n\nFile downloaded: ${fileName}\n\n🚨 CRITICAL: PLEASE EMAIL THIS FILE IMMEDIATELY TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nTechnical Error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
-        }
+        setDriveStatus('⚠️ Upload failed - File downloaded locally');
+        alert(`⚠️ UPLOAD FAILED BUT FILE SAVED!\n\nFile downloaded: ${fileName}\n\n🚨 CRITICAL: PLEASE EMAIL THIS FILE IMMEDIATELY TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\nTechnical Error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
       }
       
       // Note: URL cleanup omitted to avoid interfering with try/catch structure
