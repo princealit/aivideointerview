@@ -646,10 +646,7 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         // Check if all questions have been answered
         const allDone = template.questions.every(qq => next.find(c => c.qid === qq.id)?.blob);
         
-        // Auto-upload if enabled and all questions are done
-        if (allDone && template.autoUploadOnFinish) {
-          setTimeout(() => exportAndUpload(), 1000);
-        }
+        // All interviews are manually submitted by clicking Submit button
         
         return next;
       });
