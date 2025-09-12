@@ -801,17 +801,37 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
         console.log('📥 Upload response:', {
           status: uploadResponse.status,
           statusText: uploadResponse.statusText,
-          ok: uploadResponse.ok
+          ok: uploadResponse.ok,
+          url: uploadResponse.url
         });
         
         if (uploadResponse.ok) {
           const responseData = await uploadResponse.json();
           console.log('✅ Upload successful on attempt', attempt, ':', responseData);
-          setDriveStatus('✅ Interview submitted - uploading to Google Drive...');
           uploadSuccess = true;
           
           // Interview saved to admin submissions panel
           setDriveStatus('✅ Interview submitted successfully!');
+          
+          // Send notification email to interviewer
+          try {
+            await fetch('/api/notify-interviewer', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                candidateName: candidateName || 'Anonymous',
+                company: template.company,
+                role: template.role,
+                answeredQuestions: answeredCount,
+                totalQuestions: template.questions.length,
+                downloadUrl: responseData.url,
+                fileName: fileName
+              })
+            });
+            console.log('📧 Notification sent to interviewer');
+          } catch (emailError) {
+            console.warn('⚠️ Failed to send notification:', emailError);
+          }
           
           // Auto-download the file for the candidate using the local blob
           const url = URL.createObjectURL(blob);
@@ -823,7 +843,26 @@ function CandidateView({ template, onBack }:{ template: InterviewTemplate; onBac
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
           
-          alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to admin submissions and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+          // Verify the upload by checking if we can list it
+          try {
+            const verifyResponse = await fetch('/api/list-interviews');
+            if (verifyResponse.ok) {
+              const interviews = await verifyResponse.json();
+              const uploadedInterview = interviews.blobs?.find(b => b.pathname.includes(fileName.split('/')[1]));
+              if (uploadedInterview) {
+                console.log('✅ Upload verified - interview found in submissions');
+                alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to admin submissions and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\n📧 Admin has been notified at srn@synapserecruiternetwork.com`);
+              } else {
+                console.warn('⚠️ Upload may have failed - interview not found in listings');
+                alert(`⚠️ UPLOAD MAY HAVE FAILED!\n\nFile downloaded locally: ${fileName}\n\n🚨 PLEASE EMAIL THIS FILE TO:\nsrn@synapserecruiternetwork.com\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions`);
+              }
+            } else {
+              alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to admin submissions and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\n📧 Admin has been notified at srn@synapserecruiternetwork.com`);
+            }
+          } catch (verifyError) {
+            console.warn('⚠️ Could not verify upload:', verifyError);
+            alert(`✅ INTERVIEW COMPLETED!\n\nFile uploaded to admin submissions and downloaded locally: ${fileName}\n\nCandidate: ${candidateName || 'Anonymous'}\nPosition: ${template.role} at ${template.company}\nAnswered: ${answeredCount}/${template.questions.length} questions\n\n📧 Admin has been notified at srn@synapserecruiternetwork.com`);
+          }
           break;
         } else {
           const errorText = await uploadResponse.text();
