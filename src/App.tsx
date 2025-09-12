@@ -247,7 +247,7 @@ function ShareModal({ template, onClose }: { template: InterviewTemplate; onClos
           <p><strong>Company:</strong> {template.company}</p>
           <p><strong>Role:</strong> {template.role}</p>
           <p><strong>Questions:</strong> {template.questions.length}</p>
-          <p><strong>Auto-upload:</strong> {template.autoUploadOnFinish ? 'Yes' : 'No'}</p>
+          <p><strong>Auto-save:</strong> Yes (all interviews save to admin submissions)</p>
         </div>
 
         <div className="mb-4">
